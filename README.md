@@ -263,6 +263,50 @@ Many MCP clients have similar configuration files to Claude Desktop, and you can
 - If you are using Windsurf, you can navigate to from the `Command Palette` to `Open Windsurf Settings Page` to access the configuration file.
 - If you are using Goose run `goose configure`, then select `Add Extension`.
 
+#### Qodo Gen Configuration
+
+Qodo Gen supports MCP servers through its Agentic Tools feature. To configure Postgres MCP Pro with Qodo Gen:
+
+1. Open Qodo Gen in Agentic Mode
+2. Click "Connect more tools" or the tools icon under the chat window
+3. Click "Add new MCP" and paste the following configuration:
+
+##### Local MCP (using Docker)
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "DATABASE_URI",
+        "crystaldba/postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+      }
+    }
+  }
+}
+```
+
+##### Remote MCP (SSE)
+
+For SSE transport, first start the server:
+
+```bash
+docker run -p 8000:8000 \
+  -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
+  crystaldba/postgres-mcp --access-mode=unrestricted --transport=sse
+```
+
+Then configure Qodo Gen with the SSE URL as a Remote MCP. A green dot indicates successful connection.
+
 ## SSE Transport
 
 Postgres MCP Pro supports the [SSE transport](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse), which allows multiple MCP clients to share one server, possibly a remote server.
@@ -276,7 +320,77 @@ docker run -p 8000:8000 \
   crystaldba/postgres-mcp --access-mode=unrestricted --transport=sse
 ```
 
-Then update your MCP client configuration to call the the MCP server.
+### SSE Configuration Options
+
+The SSE server can be configured using CLI arguments or environment variables:
+
+| CLI Argument | Environment Variable | Default | Description |
+|--------------|---------------------|---------|-------------|
+| `--sse-host` | `SSE_HOST` | `localhost` | Host to bind the SSE server to |
+| `--sse-port` | `SSE_PORT` | `8000` | Port for the SSE server |
+| `--sse-path` | `SSE_PATH` | `/sse` | Path for the SSE endpoint |
+| `--cors-allow-origins` | `CORS_ALLOW_ORIGINS` | (none) | Comma-separated list of allowed CORS origins |
+
+Example with custom configuration:
+
+```bash
+docker run -p 9000:9000 \
+  -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
+  -e SSE_HOST=0.0.0.0 \
+  -e SSE_PORT=9000 \
+  -e SSE_PATH=/mcp/sse \
+  -e CORS_ALLOW_ORIGINS="http://localhost:3000,https://myapp.example.com" \
+  crystaldba/postgres-mcp --transport=sse
+```
+
+### Docker Compose
+
+For more complex deployments, you can use Docker Compose. Create a `docker-compose.yml` file:
+
+```yaml
+version: '3.8'
+
+services:
+  postgres-mcp:
+    image: crystaldba/postgres-mcp
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URI: postgresql://username:password@db:5432/dbname
+      SSE_HOST: "0.0.0.0"
+      SSE_PORT: "8000"
+      # Optional: Enable CORS for web clients
+      # CORS_ALLOW_ORIGINS: "http://localhost:3000"
+    command: ["--transport=sse", "--access-mode=unrestricted"]
+    # Uncomment below to connect to a local database
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+  # Optional: Include a PostgreSQL database for development
+  # db:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: username
+  #     POSTGRES_PASSWORD: password
+  #     POSTGRES_DB: dbname
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+# volumes:
+#   postgres_data:
+```
+
+Start the services with:
+
+```bash
+docker-compose up -d
+```
+
+### Client Configuration
+
+Update your MCP client configuration to call the the MCP server.
 For example, in Cursor's `mcp.json` or Cline's `cline_mcp_settings.json` you can put:
 
 ```json

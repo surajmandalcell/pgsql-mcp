@@ -1,0 +1,56 @@
+# Docker Compose configuration for Postgres MCP Pro
+# See README.md for full documentation
+
+version: '3.8'
+
+services:
+  postgres-mcp:
+    image: crystaldba/postgres-mcp
+    ports:
+      - "8000:8000"
+    environment:
+      # Required: PostgreSQL connection URI
+      DATABASE_URI: ${DATABASE_URI:-postgresql://username:password@db:5432/dbname}
+
+      # SSE server configuration
+      SSE_HOST: "0.0.0.0"
+      SSE_PORT: "8000"
+      SSE_PATH: "/sse"
+
+      # Optional: Query timeout for restricted mode (seconds)
+      # QUERY_TIMEOUT: "30"
+
+      # Optional: Enable CORS for web clients
+      # CORS_ALLOW_ORIGINS: "http://localhost:3000,https://myapp.example.com"
+    command: ["--transport=sse", "--access-mode=unrestricted"]
+    restart: unless-stopped
+
+    # Uncomment to connect to a database on the host machine
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+    # Uncomment to use .env file for configuration
+    # env_file:
+    #   - .env
+
+  # Optional: PostgreSQL database for development/testing
+  # Uncomment to include a PostgreSQL database
+  # db:
+  #   image: postgres:16
+  #   environment:
+  #     POSTGRES_USER: username
+  #     POSTGRES_PASSWORD: password
+  #     POSTGRES_DB: dbname
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U username -d dbname"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+# Uncomment if using the db service
+# volumes:
+#   postgres_data:

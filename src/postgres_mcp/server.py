@@ -12,9 +12,15 @@ from typing import Literal
 from typing import Union
 
 import mcp.types as types
+from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel
 from pydantic import Field
 from pydantic import validate_call
+
+# Load environment variables from .env file if present
+# This allows users to configure the server via .env file
+load_dotenv()
 
 from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
 
@@ -40,6 +46,17 @@ mcp = FastMCP("postgres-mcp")
 PG_STAT_STATEMENTS = "pg_stat_statements"
 HYPOPG_EXTENSION = "hypopg"
 DEFAULT_QUERY_TIMEOUT = 30  # Default timeout in seconds for restricted mode
+DEFAULT_SSE_HOST = "localhost"
+DEFAULT_SSE_PORT = 8000
+DEFAULT_SSE_PATH = "/sse"
+
+
+class HypotheticalIndex(BaseModel):
+    """Schema for hypothetical index definition used in explain_query."""
+
+    table: str = Field(description="The table name to add the index to (e.g., 'users')")
+    columns: list[str] = Field(description="List of column names to include in the index (e.g., ['email'] or ['last_name', 'first_name'])")
+    using: str = Field(default="btree", description="Index method (default: 'btree', other options include 'hash', 'gist', 'gin', 'brin')")
 
 ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResource]
 
@@ -351,17 +368,10 @@ async def explain_query(
         "Takes longer but provides more accurate information.",
         default=False,
     ),
-    hypothetical_indexes: list[dict[str, Any]] = Field(
-        description="""A list of hypothetical indexes to simulate. Each index must be a dictionary with these keys:
-    - 'table': The table name to add the index to (e.g., 'users')
-    - 'columns': List of column names to include in the index (e.g., ['email'] or ['last_name', 'first_name'])
-    - 'using': Optional index method (default: 'btree', other options include 'hash', 'gist', etc.)
-
-Examples: [
-    {"table": "users", "columns": ["email"], "using": "btree"},
-    {"table": "orders", "columns": ["user_id", "created_at"]}
-]
-If there is no hypothetical index, you can pass an empty list.""",
+    hypothetical_indexes: list[HypotheticalIndex] = Field(
+        description="A list of hypothetical indexes to simulate. Each index requires 'table' and 'columns' fields, "
+        "with optional 'using' field for index method (default: 'btree'). "
+        "Example: [{'table': 'users', 'columns': ['email']}, {'table': 'orders', 'columns': ['user_id', 'created_at']}]",
         default=[],
     ),
 ) -> ResponseType:
@@ -394,7 +404,9 @@ If there is no hypothetical index, you can pass an empty list.""",
                     return format_text_response(hypopg_message)
 
                 # HypoPG is installed, proceed with explaining with hypothetical indexes
-                result = await explain_tool.explain_with_hypothetical_indexes(sql, hypothetical_indexes)
+                # Convert Pydantic models to dicts for the explain tool
+                indexes_as_dicts = [idx.model_dump() for idx in hypothetical_indexes]
+                result = await explain_tool.explain_with_hypothetical_indexes(sql, indexes_as_dicts)
             except Exception:
                 raise  # Re-raise the original exception
         elif analyze:
@@ -566,14 +578,27 @@ async def main():
     parser.add_argument(
         "--sse-host",
         type=str,
-        default="localhost",
-        help="Host to bind SSE server to (default: localhost)",
+        default=None,
+        help=f"Host to bind SSE server to (default: {DEFAULT_SSE_HOST}). Can also be set via SSE_HOST env var.",
     )
     parser.add_argument(
         "--sse-port",
         type=int,
-        default=8000,
-        help="Port for SSE server (default: 8000)",
+        default=None,
+        help=f"Port for SSE server (default: {DEFAULT_SSE_PORT}). Can also be set via SSE_PORT env var.",
+    )
+    parser.add_argument(
+        "--sse-path",
+        type=str,
+        default=None,
+        help=f"Path for SSE endpoint (default: {DEFAULT_SSE_PATH}). Can also be set via SSE_PATH env var.",
+    )
+    parser.add_argument(
+        "--cors-allow-origins",
+        type=str,
+        default=None,
+        help="Comma-separated list of allowed CORS origins for SSE transport (e.g., 'http://localhost:3000,https://example.com'). "
+        "Can also be set via CORS_ALLOW_ORIGINS env var. Use '*' to allow all origins (not recommended for production).",
     )
     parser.add_argument(
         "--query-timeout",
@@ -644,10 +669,81 @@ async def main():
     if args.transport == "stdio":
         await mcp.run_stdio_async()
     else:
-        # Update FastMCP settings based on command line arguments
-        mcp.settings.host = args.sse_host
-        mcp.settings.port = args.sse_port
-        await mcp.run_sse_async()
+        # Set SSE host from CLI argument or environment variable
+        sse_host = args.sse_host
+        if sse_host is None:
+            sse_host = os.environ.get("SSE_HOST", DEFAULT_SSE_HOST)
+
+        # Set SSE port from CLI argument or environment variable
+        sse_port = args.sse_port
+        if sse_port is None:
+            env_port = os.environ.get("SSE_PORT")
+            if env_port is not None:
+                try:
+                    sse_port = int(env_port)
+                except ValueError:
+                    logger.warning(f"Invalid SSE_PORT value '{env_port}', using default {DEFAULT_SSE_PORT}")
+                    sse_port = DEFAULT_SSE_PORT
+            else:
+                sse_port = DEFAULT_SSE_PORT
+
+        # Set SSE path from CLI argument or environment variable
+        sse_path = args.sse_path
+        if sse_path is None:
+            sse_path = os.environ.get("SSE_PATH", DEFAULT_SSE_PATH)
+
+        # Get CORS allowed origins from CLI argument or environment variable
+        cors_origins_str = args.cors_allow_origins
+        if cors_origins_str is None:
+            cors_origins_str = os.environ.get("CORS_ALLOW_ORIGINS")
+
+        # If CORS is configured, run with custom Starlette app
+        if cors_origins_str:
+            import uvicorn
+            from starlette.applications import Starlette
+            from starlette.middleware import Middleware
+            from starlette.middleware.cors import CORSMiddleware
+            from starlette.routing import Mount
+
+            # Parse CORS origins
+            if cors_origins_str == "*":
+                cors_origins = ["*"]
+            else:
+                cors_origins = [origin.strip() for origin in cors_origins_str.split(",")]
+
+            logger.info(f"Enabling CORS for origins: {cors_origins}")
+
+            # Create Starlette app with CORS middleware wrapping the SSE app
+            middleware = [
+                Middleware(
+                    CORSMiddleware,
+                    allow_origins=cors_origins,
+                    allow_credentials=True,
+                    allow_methods=["GET", "POST", "OPTIONS"],
+                    allow_headers=["*"],
+                )
+            ]
+
+            # Update FastMCP settings for the SSE path
+            mcp.settings.sse_path = sse_path
+
+            app = Starlette(
+                routes=[Mount("/", app=mcp.sse_app())],
+                middleware=middleware,
+            )
+
+            logger.info(f"Starting SSE server with CORS on {sse_host}:{sse_port}{sse_path}")
+            config = uvicorn.Config(app, host=sse_host, port=sse_port, log_level="info")
+            server = uvicorn.Server(config)
+            await server.serve()
+        else:
+            # Update FastMCP settings based on command line arguments or env vars
+            mcp.settings.host = sse_host
+            mcp.settings.port = sse_port
+            mcp.settings.sse_path = sse_path
+
+            logger.info(f"Starting SSE server on {sse_host}:{sse_port}{sse_path}")
+            await mcp.run_sse_async()
 
 
 async def shutdown(sig=None):
