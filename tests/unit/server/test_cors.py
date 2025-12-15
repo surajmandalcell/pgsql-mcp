@@ -241,7 +241,7 @@ class TestCORSOriginParsing:
 
     def test_parse_wildcard(self):
         """Test parsing wildcard origin."""
-        cors_str = "*"
+        cors_str: str = "*"
         if cors_str == "*":
             origins = ["*"]
         else:

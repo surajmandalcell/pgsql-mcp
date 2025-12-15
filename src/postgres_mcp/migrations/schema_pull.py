@@ -171,7 +171,7 @@ class SchemaPull:
         AND t.table_type = 'BASE TABLE'
         ORDER BY t.table_name
         """
-        rows = await self.sql_driver.execute_query(tables_query, params=(schema,))
+        rows = await self.sql_driver.execute_query(tables_query, params=[schema])
         if not rows:
             return []
 
@@ -219,7 +219,7 @@ class SchemaPull:
         AND c.table_name = %s
         ORDER BY c.ordinal_position
         """
-        rows = await self.sql_driver.execute_query(query, params=(schema, table))
+        rows = await self.sql_driver.execute_query(query, params=[schema, table])
         if not rows:
             return []
 
@@ -278,7 +278,7 @@ class SchemaPull:
             cc.check_clause
         ORDER BY tc.constraint_name
         """
-        rows = await self.sql_driver.execute_query(query, params=(schema, table))
+        rows = await self.sql_driver.execute_query(query, params=[schema, table])
         if not rows:
             return []
 
@@ -318,7 +318,7 @@ class SchemaPull:
         GROUP BY i.relname, ix.indisunique, ix.indisprimary, am.amname, ix.indexrelid
         ORDER BY i.relname
         """
-        rows = await self.sql_driver.execute_query(query, params=(schema, table))
+        rows = await self.sql_driver.execute_query(query, params=[schema, table])
         if not rows:
             return []
 
@@ -352,7 +352,7 @@ class SchemaPull:
         WHERE v.table_schema = %s
         ORDER BY v.table_name
         """
-        rows = await self.sql_driver.execute_query(query, params=(schema,))
+        rows = await self.sql_driver.execute_query(query, params=[schema])
         if not rows:
             return []
 
@@ -382,7 +382,7 @@ class SchemaPull:
         WHERE s.sequence_schema = %s
         ORDER BY s.sequence_name
         """
-        rows = await self.sql_driver.execute_query(query, params=(schema,))
+        rows = await self.sql_driver.execute_query(query, params=[schema])
         if not rows:
             return []
 
@@ -415,7 +415,7 @@ class SchemaPull:
         GROUP BY n.nspname, t.typname
         ORDER BY t.typname
         """
-        rows = await self.sql_driver.execute_query(query, params=(schema,))
+        rows = await self.sql_driver.execute_query(query, params=[schema])
         if not rows:
             return []
 

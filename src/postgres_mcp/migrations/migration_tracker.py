@@ -3,7 +3,11 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from typing import Optional
+from typing import cast
+
+from typing_extensions import LiteralString
 
 from ..sql import SqlDriver
 
@@ -55,7 +59,7 @@ class MigrationTracker:
         CREATE INDEX IF NOT EXISTS idx_{MIGRATION_TABLE_NAME}_batch
         ON {self.table_name} (batch);
         """
-        await self.sql_driver.execute_query(create_table_sql)
+        await self.sql_driver.execute_query(cast(LiteralString, create_table_sql))
         logger.info(f"Migration table ensured: {self.table_name}")
 
     async def get_applied_migrations(self) -> list[MigrationRecord]:
@@ -69,7 +73,7 @@ class MigrationTracker:
         FROM {self.table_name}
         ORDER BY id ASC
         """
-        rows = await self.sql_driver.execute_query(query)
+        rows = await self.sql_driver.execute_query(cast(LiteralString, query))
         if not rows:
             return []
 
@@ -94,7 +98,7 @@ class MigrationTracker:
         SELECT COALESCE(MAX(batch), 0) as latest_batch
         FROM {self.table_name}
         """
-        rows = await self.sql_driver.execute_query(query)
+        rows = await self.sql_driver.execute_query(cast(LiteralString, query))
         if rows:
             return rows[0].cells["latest_batch"]
         return 0
@@ -120,8 +124,8 @@ class MigrationTracker:
         VALUES (%s, %s, %s, %s)
         """
         await self.sql_driver.execute_query(
-            query,
-            params=(name, checksum, batch, executed_sql),
+            cast(LiteralString, query),
+            params=[name, checksum, batch, executed_sql],
         )
         logger.info(f"Recorded migration: {name} (batch {batch})")
 
@@ -135,7 +139,7 @@ class MigrationTracker:
         DELETE FROM {self.table_name}
         WHERE name = %s
         """
-        await self.sql_driver.execute_query(query, params=(name,))
+        await self.sql_driver.execute_query(cast(LiteralString, query), params=[name])
         logger.info(f"Removed migration record: {name}")
 
     async def get_migrations_in_batch(self, batch: int) -> list[MigrationRecord]:
@@ -153,7 +157,7 @@ class MigrationTracker:
         WHERE batch = %s
         ORDER BY id DESC
         """
-        rows = await self.sql_driver.execute_query(query, params=(batch,))
+        rows = await self.sql_driver.execute_query(cast(LiteralString, query), params=[batch])
         if not rows:
             return []
 
@@ -181,10 +185,10 @@ class MigrationTracker:
         SELECT 1 FROM {self.table_name}
         WHERE name = %s
         """
-        rows = await self.sql_driver.execute_query(query, params=(name,))
+        rows = await self.sql_driver.execute_query(cast(LiteralString, query), params=[name])
         return bool(rows)
 
-    async def get_migration_status(self) -> dict:
+    async def get_migration_status(self) -> dict[str, Any]:
         """Get migration status summary.
 
         Returns:
