@@ -1,6 +1,5 @@
 """Tests for CLI argument parsing and configuration."""
 
-import argparse
 import os
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -8,11 +7,11 @@ from unittest.mock import patch
 
 import pytest
 
-from postgres_mcp.server import AccessMode
 from postgres_mcp.server import DEFAULT_QUERY_TIMEOUT
 from postgres_mcp.server import DEFAULT_SSE_HOST
 from postgres_mcp.server import DEFAULT_SSE_PATH
 from postgres_mcp.server import DEFAULT_SSE_PORT
+from postgres_mcp.server import AccessMode
 
 
 class TestCLIArgumentParsing:

@@ -22,22 +22,22 @@ from pydantic import validate_call
 # This allows users to configure the server via .env file
 load_dotenv()
 
-from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
+from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor  # noqa: E402
 
-from .artifacts import ErrorResult
-from .artifacts import ExplainPlanArtifact
-from .database_health import DatabaseHealthTool
-from .database_health import HealthType
-from .explain import ExplainPlanTool
-from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
-from .index.llm_opt import LLMOptimizerTool
-from .index.presentation import TextPresentation
-from .sql import DbConnPool
-from .sql import SafeSqlDriver
-from .sql import SqlDriver
-from .sql import check_hypopg_installation_status
-from .sql import obfuscate_password
-from .top_queries import TopQueriesCalc
+from .artifacts import ErrorResult  # noqa: E402
+from .artifacts import ExplainPlanArtifact  # noqa: E402
+from .database_health import DatabaseHealthTool  # noqa: E402
+from .database_health import HealthType  # noqa: E402
+from .explain import ExplainPlanTool  # noqa: E402
+from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES  # noqa: E402
+from .index.llm_opt import LLMOptimizerTool  # noqa: E402
+from .index.presentation import TextPresentation  # noqa: E402
+from .sql import DbConnPool  # noqa: E402
+from .sql import SafeSqlDriver  # noqa: E402
+from .sql import SqlDriver  # noqa: E402
+from .sql import check_hypopg_installation_status  # noqa: E402
+from .sql import obfuscate_password  # noqa: E402
+from .top_queries import TopQueriesCalc  # noqa: E402
 
 # Initialize FastMCP with default settings
 mcp = FastMCP("postgres-mcp")

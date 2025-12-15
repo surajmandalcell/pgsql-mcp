@@ -3,7 +3,6 @@
 import logging
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any
 from typing import Optional
 
 from ..sql import SqlDriver
@@ -120,7 +119,7 @@ class SchemaPull:
         """
         self.sql_driver = sql_driver
 
-    async def pull_schema(self, schemas: list[str] = None) -> SchemaInfo:
+    async def pull_schema(self, schemas: list[str] | None = None) -> SchemaInfo:
         """Pull complete schema information from the database.
 
         Args:
