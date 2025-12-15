@@ -25,6 +25,9 @@ email = "surajmandalcell@gmail.com"
 requires = [ "hatchling",]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/postgres_mcp"]
+
 [project.scripts]
 pgsql-mcp = "postgres_mcp:main"
 
