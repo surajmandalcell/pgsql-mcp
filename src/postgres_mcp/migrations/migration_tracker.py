@@ -3,17 +3,33 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 from typing import Optional
 from typing import cast
 
 from typing_extensions import LiteralString
+from typing_extensions import TypedDict
 
 from ..sql import SqlDriver
 
 logger = logging.getLogger(__name__)
 
 MIGRATION_TABLE_NAME = "_postgres_mcp_migrations"
+
+
+class MigrationStatusEntry(TypedDict):
+    """Type for a single migration entry in status."""
+
+    name: str
+    applied_at: str
+    batch: int
+
+
+class MigrationStatus(TypedDict):
+    """Type for migration status summary."""
+
+    total_applied: int
+    latest_batch: int
+    migrations: list[MigrationStatusEntry]
 
 
 @dataclass
@@ -188,7 +204,7 @@ class MigrationTracker:
         rows = await self.sql_driver.execute_query(cast(LiteralString, query), params=[name])
         return bool(rows)
 
-    async def get_migration_status(self) -> dict[str, Any]:
+    async def get_migration_status(self) -> MigrationStatus:
         """Get migration status summary.
 
         Returns:
@@ -197,15 +213,15 @@ class MigrationTracker:
         applied = await self.get_applied_migrations()
         latest_batch = await self.get_latest_batch()
 
-        return {
-            "total_applied": len(applied),
-            "latest_batch": latest_batch,
-            "migrations": [
-                {
-                    "name": m.name,
-                    "applied_at": m.applied_at.isoformat(),
-                    "batch": m.batch,
-                }
+        return MigrationStatus(
+            total_applied=len(applied),
+            latest_batch=latest_batch,
+            migrations=[
+                MigrationStatusEntry(
+                    name=m.name,
+                    applied_at=m.applied_at.isoformat(),
+                    batch=m.batch,
+                )
                 for m in applied
             ],
-        }
+        )
