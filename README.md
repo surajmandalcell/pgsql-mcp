@@ -23,6 +23,23 @@ Database credentials remain the final security boundary. Use a dedicated least-p
 - **Database health** — inspect index, connection, vacuum, sequence, replication, buffer, and constraint health.
 - **Slow-query analysis** — rank workload queries by time or blended resource use.
 
+## Lite profile
+
+`pgsql-mcp-lite` is the read-only, low-context entry point for clients that only need schema inspection, bounded queries, and non-executing plans:
+
+```bash
+DATABASE_URI='postgresql://readonly_user:password@localhost:5432/app' \
+  uvx pgsql-mcp-lite
+```
+
+The lite profile exposes six tools, has no write-mode switch, caps results at 500 rows, keeps zero warm connections, and limits the pool to two connections. It does not import or advertise migrations, health suites, workload analysis, index advisors, extension management, or LLM features. See [docs/lite.md](docs/lite.md) for the exact contract and MCP configuration.
+
+LLM-backed index analysis is an optional install and is not part of the core or lite dependency set:
+
+```bash
+uvx --from 'pgsql-mcp[llm]' pgsql-mcp
+```
+
 ## Quick start
 
 ### Claude Code and cloud IDEs
@@ -149,7 +166,7 @@ The `get_server_capabilities` tool reports the effective profile, access mode, l
 | `--sse-path` | `SSE_PATH` | `/sse` |
 | `--cors-allow-origins` | `CORS_ALLOW_ORIGINS` | unset |
 
-The absolute result ceiling is 5,000 rows. Wildcard CORS never enables credentialed cross-origin requests.
+The full server's absolute result ceiling is 5,000 rows. The lite ceiling is 500 rows. Wildcard CORS never enables credentialed cross-origin requests.
 
 ## Optional PostgreSQL extensions
 

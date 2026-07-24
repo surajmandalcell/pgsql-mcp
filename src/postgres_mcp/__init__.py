@@ -1,33 +1,49 @@
+"""Public entry points for the full and lite pgsql-mcp servers."""
+
+from __future__ import annotations
+
 import asyncio
+import importlib
 import logging
 import sys
-
-from . import server
-from . import top_queries
+from types import ModuleType
 
 
-def main():
-    """Main entry point for the package."""
-    # Configure logging to use stderr to avoid interfering with stdio MCP transport
-    # The MCP protocol uses stdout for communication, so all logs must go to stderr
+def _configure_runtime() -> None:
+    """Configure process behavior shared by both console entry points."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         stream=sys.stderr,
     )
-
-    # As of version 3.3.0 Psycopg on Windows is not compatible with the default
-    # ProactorEventLoop.
-    # See: https://www.psycopg.org/psycopg3/docs/advanced/async.html#async
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    asyncio.run(server.main())
+
+def _run(module_name: str) -> None:
+    """Import one server lazily and run its asynchronous entry point."""
+    _configure_runtime()
+    module = importlib.import_module(module_name, __name__)
+    asyncio.run(module.main())
 
 
-# Optionally expose other important items at package level
-__all__ = [
-    "main",
-    "server",
-    "top_queries",
-]
+def main() -> None:
+    """Run the full pgsql-mcp server."""
+    _run(".server")
+
+
+def lite_main() -> None:
+    """Run the minimal, read-only pgsql-mcp-lite server."""
+    _run(".lite_server")
+
+
+def __getattr__(name: str) -> ModuleType:
+    """Preserve historical module exports without eager advanced imports."""
+    if name in {"server", "lite_server", "top_queries"}:
+        module = importlib.import_module(f".{name}", __name__)
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = ["lite_main", "main"]
