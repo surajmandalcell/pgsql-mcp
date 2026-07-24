@@ -622,12 +622,16 @@ source = { editable = "." }
 dependencies = [
     { name = "attrs" },
     { name = "humanize" },
-    { name = "instructor" },
     { name = "mcp", extra = ["cli"] },
     { name = "pglast" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
     { name = "python-dotenv" },
+]
+
+[package.optional-dependencies]
+llm = [
+    { name = "instructor" },
 ]
 
 [package.dev-dependencies]
@@ -643,13 +647,14 @@ dev = [
 requires-dist = [
     { name = "attrs", specifier = ">=25.3.0" },
     { name = "humanize", specifier = ">=4.8.0" },
-    { name = "instructor", specifier = ">=1.7.9" },
+    { name = "instructor", marker = "extra == 'llm'", specifier = ">=1.7.9" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.5.0" },
     { name = "pglast", specifier = "==7.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.6" },
     { name = "psycopg-pool", specifier = ">=3.2.6" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
+provides-extras = ["llm"]
 
 [package.metadata.requires-dev]
 dev = [
