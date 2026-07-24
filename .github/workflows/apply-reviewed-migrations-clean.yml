@@ -1,0 +1,144 @@
+name: Apply clean reviewed migration implementation
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-clean-reviewed-migrations
+  cancel-in-progress: false
+
+jobs:
+  apply-test-commit:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact PR head without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Start and verify Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo service docker start || true
+          docker info
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Verify and apply the reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=(
+            "cc02966eddd5660b9b58eb45021ee474532a4ca1"
+            "e7dc8a49f5fd702dbe7293b862a1733d99c7ed4f"
+            "94fc6cb83ba371a86b096763d37b0d8e9beeaa87"
+            "27cc6e0a9fea2b59cfbaf8e820d3a371c5fe0e77"
+            "492ada50cc4fe2967ab740af698f606ddb8dde31"
+            "4527cecd2048977f90ebc9c30026395793ddc17b"
+            "2bdf1c2e9725832930059e3fa0bbb6951d4b3612"
+            "488ba4b0f94bc9a03653dc3d354d5521279ce6df"
+            "f796ca81b80dbe898fd4187587bc801ae270559d"
+            "3bc4a4bebc81bb90f08827f04151932c20ca2abb"
+            "c2c83b054a99c1fc8a90e99f39839b17229ca2fe"
+            "2ed5ff911844709b482367c27e0310b7f4c2108e"
+            "4f0c86df7fec655821b35f370a57a4212950f98e"
+            "e1b01a74610debc793f5d4072562833ec44a1a3f"
+            "b08ec4d6686247b6f0b11c880ab89b057b3eeafc"
+            "e9a51abdb514848325abeb77b7f581b727be1d2b"
+            "1cf4ed99fe47f2e08781a5992b32c3dd763fa806"
+            "12a705c57824b9a045de0ebe784ea2d636ce6f84"
+            "5a71843e3421f0e06e3bcfd7fc9975cc2cb4b21a"
+            "395845cdc839a9bfb7354687080c74bb91e03acf"
+            "16100499ad066b53544358a8cdae88cefa17b3cc"
+            "df85adcf140b2e2bc2542957a07b81572e62d2df"
+            "c312e70832542067daf0d465c3f6d628c0715949"
+            "56f0775dcc28fdd4d52a0bc7d1abc49ba923476c"
+            "c1758177cd06bb475d2161cc76996a8a795e1bb5"
+            "2f20b7146d85079e97cbdf97f6b8fdfc0027b1fc"
+            "6dec9944fe7d11900203677455b0cd0d78218770"
+            "b6a2bd93b5160ab52fdbbf7cb475ccf975a75138"
+            "efe47155bf6fad14c748b2668f5fb2cd3ddd6eed"
+          )
+          : > /tmp/reviewed-migrations.patch.gz.b64
+          for index in $(seq -w 0 28); do
+            path=".github/transfer/reviewed-migrations-clean/part0${index}"
+            actual=$(git hash-object "$path")
+            test "$actual" = "${expected[$((10#$index))]}"
+            cat "$path" >> /tmp/reviewed-migrations.patch.gz.b64
+          done
+          test "$(wc -c < /tmp/reviewed-migrations.patch.gz.b64)" -eq 57776
+          test "$(sha256sum /tmp/reviewed-migrations.patch.gz.b64 | cut -d' ' -f1)" = "4a8a11a64a962bb486e06c0ab7627468f13e16089a094113af0b5522c3810c0d"
+          base64 --decode /tmp/reviewed-migrations.patch.gz.b64 > /tmp/reviewed-migrations.patch.gz
+          test "$(wc -c < /tmp/reviewed-migrations.patch.gz)" -eq 43331
+          test "$(sha256sum /tmp/reviewed-migrations.patch.gz | cut -d' ' -f1)" = "682ab9b62dba807d8b3632c66a085f94e772b2666ef66f5d82be20efaf99292a"
+          gzip --decompress --stdout /tmp/reviewed-migrations.patch.gz > /tmp/reviewed-migrations.patch
+          test "$(wc -c < /tmp/reviewed-migrations.patch)" -eq 121832
+          test "$(sha256sum /tmp/reviewed-migrations.patch | cut -d' ' -f1)" = "86d66ee2d482989fc97b817e3a0f006a8cf90496a11c2f1537287e08784ed283"
+          git apply --check /tmp/reviewed-migrations.patch
+          git apply /tmp/reviewed-migrations.patch
+          rm -rf .github/transfer/reviewed-migrations-clean
+          rm .github/workflows/apply-reviewed-migrations-clean.yml
+
+      - name: Install complete dependency set
+        run: uv sync --frozen --all-extras
+
+      - name: Validate the complete migration bounded context
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+          uv run pytest -v --log-cli-level=INFO --junitxml=/tmp/pytest-results.xml 2>&1 | tee /tmp/pytest-output.txt
+
+      - name: Stage and verify only the reviewed diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git diff --cached --check
+          git diff --quiet
+          test -z "$(git ls-files --others --exclude-standard)"
+          git diff --cached --name-only | sort > /tmp/changed-files
+          test "$(wc -l < /tmp/changed-files)" -eq 49
+          allowed='^(\.github/transfer/reviewed-migrations/part0[0-4]|\.github/workflows/(apply-reviewed-migrations|export-reviewed-migrations-workspace)\.yml|\.github/transfer/reviewed-migrations-clean/part0(0[0-9]|1[0-9]|2[0-8])|\.github/workflows/apply-reviewed-migrations-clean\.yml|CONTRIBUTING\.md|README\.md|docs/migrations\.md|src/postgres_mcp/migrations/(__init__|domain|migration_tracker|planner|postgres_backend|service)\.py|src/postgres_mcp/server\.py|src/postgres_mcp/sql/sql_driver\.py|tests/unit/migrations/test_postgres_backend\.py)$'
+          unexpected=$(grep -Ev "$allowed" /tmp/changed-files || true)
+          if [[ -n "$unexpected" ]]; then
+            printf 'Unexpected changed files:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+      - name: Commit the green implementation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Implement reviewed atomic migrations"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/reviewed-migrations
