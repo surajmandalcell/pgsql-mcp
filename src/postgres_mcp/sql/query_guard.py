@@ -125,6 +125,4 @@ class SafeQueryExecutor:
                     timeout_seconds=self.timeout_seconds,
                 )
         except TimeoutError as exc:
-            raise ValueError(
-                f"query validation or execution timed out after {self.timeout_seconds:g} seconds"
-            ) from exc
+            raise ValueError(f"query validation or execution timed out after {self.timeout_seconds:g} seconds") from exc
