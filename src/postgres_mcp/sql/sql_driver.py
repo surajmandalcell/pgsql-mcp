@@ -221,16 +221,16 @@ class SqlDriver:
         transaction_started = False
         try:
             async with connection.cursor(row_factory=dict_row) as cursor:
+                transaction_started = True
                 if force_readonly:
                     await cursor.execute("BEGIN TRANSACTION READ ONLY")
-                    transaction_started = True
 
                 if params:
                     await cursor.execute(query, params)
                 else:
                     await cursor.execute(query)
 
-                while await cursor.nextset():
+                while cursor.nextset():
                     pass
 
                 if cursor.description is None:
@@ -298,8 +298,8 @@ class SqlDriver:
         transaction_started = False
         try:
             async with connection.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute("BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION")
                 transaction_started = True
+                await cursor.execute("BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION")
                 if timeout_seconds is not None:
                     timeout_ms = max(1, int(timeout_seconds * 1000))
                     lock_timeout_ms = max(1, int(min(timeout_seconds, DEFAULT_LOCK_TIMEOUT_SECONDS) * 1000))
@@ -419,8 +419,8 @@ class SqlDriver:
         try:
             async with connection.cursor() as control_cursor:
                 access_clause = "READ ONLY" if read_only else "READ WRITE"
-                await control_cursor.execute(f"BEGIN ISOLATION LEVEL {isolation.sql} {access_clause}")
                 transaction_started = True
+                await control_cursor.execute(f"BEGIN ISOLATION LEVEL {isolation.sql} {access_clause}")
                 await control_cursor.execute(
                     "SELECT set_config('statement_timeout', %s, true)",
                     [f"{max(1, int(timeout_seconds * 1000))}ms"],
