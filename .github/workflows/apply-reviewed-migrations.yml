@@ -52,13 +52,19 @@ jobs:
         run: |
           set -euo pipefail
           : > /tmp/reviewed-migrations.patch.gz.b64
+          : > /tmp/reviewed-migrations-reconstruction.txt
           for index in 00 01 02 03 04; do
-            tr -d '[:space:]' < ".github/transfer/reviewed-migrations/part${index}" >> /tmp/reviewed-migrations.patch.gz.b64
+            source=".github/transfer/reviewed-migrations/part${index}"
+            canonical="/tmp/reviewed-migrations-part${index}.b64"
+            tr -d '[:space:]' < "$source" > "$canonical"
+            printf 'part%s-bytes=%s\n' "$index" "$(wc -c < "$canonical")" | tee -a /tmp/reviewed-migrations-reconstruction.txt
+            printf 'part%s-sha256=%s\n' "$index" "$(sha256sum "$canonical" | cut -d' ' -f1)" | tee -a /tmp/reviewed-migrations-reconstruction.txt
+            cat "$canonical" >> /tmp/reviewed-migrations.patch.gz.b64
           done
           {
             printf 'base64-bytes=%s\n' "$(wc -c < /tmp/reviewed-migrations.patch.gz.b64)"
             printf 'base64-sha256=%s\n' "$(sha256sum /tmp/reviewed-migrations.patch.gz.b64 | cut -d' ' -f1)"
-          } | tee /tmp/reviewed-migrations-reconstruction.txt
+          } | tee -a /tmp/reviewed-migrations-reconstruction.txt
           test "$(wc -c < /tmp/reviewed-migrations.patch.gz.b64)" -eq 29300
           test "$(sha256sum /tmp/reviewed-migrations.patch.gz.b64 | cut -d' ' -f1)" = "5bef6c30221dea79000cd6702063c6b717d7ee242422588e1de2bf687bc6960d"
           base64 --decode /tmp/reviewed-migrations.patch.gz.b64 > /tmp/reviewed-migrations.patch.gz
@@ -86,7 +92,9 @@ jobs:
         with:
           name: reviewed-migrations-reconstruction
           path: |
+            .github/transfer/reviewed-migrations/
             /tmp/reviewed-migrations-reconstruction.txt
+            /tmp/reviewed-migrations-part*.b64
             /tmp/reviewed-migrations.patch.gz.b64
             /tmp/reviewed-migrations.patch.gz
             /tmp/reviewed-migrations.patch
