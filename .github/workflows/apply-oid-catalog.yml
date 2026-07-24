@@ -1,6 +1,9 @@
 name: Validate OID catalog implementation
 
 on:
+  push:
+    branches:
+      - feature/oid-catalog-types
   pull_request:
     branches:
       - main
@@ -20,10 +23,10 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout exact PR head
+      - name: Checkout exact revision
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
 
