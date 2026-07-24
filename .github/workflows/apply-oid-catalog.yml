@@ -1,31 +1,24 @@
-name: Validate OID catalog implementation
+name: Apply validated OID catalog implementation
 
 on:
   push:
     branches:
       - feature/oid-catalog-types
-  pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: validate-oid-catalog-implementation
-  cancel-in-progress: true
+  group: apply-validated-oid-catalog
+  cancel-in-progress: false
 
 jobs:
-  validate:
+  apply-test-commit:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
-      - name: Checkout exact revision
+      - name: Checkout exact revision without persisted credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
@@ -40,12 +33,15 @@ jobs:
       - name: Start Docker service
         run: sudo service docker start || true
 
+      - name: Verify Docker is running
+        run: docker info
+
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           version: "0.6.9"
 
-      - name: Reconstruct and apply implementation
+      - name: Reconstruct and apply reviewed implementation
         shell: bash
         run: |
           set -euo pipefail
@@ -71,55 +67,161 @@ jobs:
           test "$(sha256sum /tmp/oid-catalog.patch | cut -d' ' -f1)" = "7a9496805fbf9ec119f13e4cbaccb39eac68a7f6b99e3f17a1df5f1cb17bcc5b"
           git apply --check /tmp/oid-catalog.patch
           git apply /tmp/oid-catalog.patch
+
+      - name: Add compatibility contracts before production fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              content = target.read_text()
+              count = content.count(old)
+              if count != 1:
+                  raise RuntimeError(f"expected one match in {path}, found {count}")
+              target.write_text(content.replace(old, new, 1))
+
+          replace_once(
+              "tests/unit/catalog/test_catalog_advanced.py",
+              '''    assert all(call.kwargs["force_readonly"] is True for call in driver.execute_bounded_query.await_args_list)
+          ''',
+              '''    assert all(call.kwargs["force_readonly"] is True for call in driver.execute_bounded_query.await_args_list)
+
+              server_query = driver.execute_bounded_query.await_args_list[0].args[0]
+              assert "pg_catalog.pg_database AS d" in server_query
+              assert "d.datcollate AS lc_collate" in server_query
+              assert "d.datctype AS lc_ctype" in server_query
+              assert "current_setting('lc_collate')" not in server_query
+              assert "current_setting('lc_ctype')" not in server_query
+          ''',
+          )
+          replace_once(
+              "tests/unit/catalog/test_catalog_advanced.py",
+              '''    assert payload["privileges"][0]["grantee"] == "app_reader"
+              assert driver.execute_bounded_query.await_count == 9
+          ''',
+              '''    assert payload["privileges"][0]["grantee"] == "app_reader"
+              assert driver.execute_bounded_query.await_count == 9
+
+              index_query = driver.execute_bounded_query.await_args_list[3].args[0]
+              assert "pg_get_expr(i.indpred, i.indrelid, false) AS predicate" in index_query
+          ''',
+          )
+          replace_once(
+              "tests/integration/catalog/test_catalog_advanced_integration.py",
+              '''    assert ("view", "item_view") in identities
+              assert ("materialized_view", "item_summary") in identities
+              assert ("function", "identity_value") in identities
+          ''',
+              '''    assert ("view", "item_view") in identities
+              assert ("materialized_view", "item_summary") in identities
+
+              functions = await search_catalog_data(
+                  catalog_driver,
+                  term="identity",
+                  schema_name=TEST_SCHEMA,
+                  object_kind="function",
+                  limit=100,
+              )
+              assert {(row["object_kind"], row["object_name"]) for row in functions} == {
+                  ("function", "identity_value")
+              }
+          ''',
+          )
+          PY
+
+      - name: Implement PostgreSQL 15 and 16 compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              content = target.read_text()
+              count = content.count(old)
+              if count != 1:
+                  raise RuntimeError(f"expected one match in {path}, found {count}")
+              target.write_text(content.replace(old, new, 1))
+
+          replace_once(
+              "src/postgres_mcp/catalog_advanced.py",
+              '''            current_setting('lc_collate') AS lc_collate,
+                      current_setting('lc_ctype') AS lc_ctype,
+          ''',
+              '''            d.datcollate AS lc_collate,
+                      d.datctype AS lc_ctype,
+          ''',
+          )
+          replace_once(
+              "src/postgres_mcp/catalog_advanced.py",
+              '''        FROM pg_catalog.pg_roles AS r
+                  WHERE r.rolname = current_user
+          ''',
+              '''        FROM pg_catalog.pg_roles AS r
+                  JOIN pg_catalog.pg_database AS d ON d.datname = current_database()
+                  WHERE r.rolname = current_user
+          ''',
+          )
+          replace_once(
+              "src/postgres_mcp/catalog_advanced.py",
+              "pg_catalog.pg_get_expr(i.indpred, i.indrelid, true) AS predicate",
+              "pg_catalog.pg_get_expr(i.indpred, i.indrelid, false) AS predicate",
+          )
+          PY
+          uv run ruff format tests/integration/catalog/test_catalog_advanced_integration.py
+
+      - name: Remove transfer-only artifacts
+        run: |
           rm -rf .github/patches/oid-catalog
           rm .github/workflows/apply-oid-catalog.yml
 
       - name: Install complete dependency set
         run: uv sync --frozen --all-extras
 
-      - name: Run test-first quality gates
-        id: quality
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          uv run ruff format --check . 2>&1 | tee /tmp/ruff-format.txt
-          format_status=${PIPESTATUS[0]}
-          uv run ruff check . 2>&1 | tee /tmp/ruff-lint.txt
-          lint_status=${PIPESTATUS[0]}
-          uv run pyright 2>&1 | tee /tmp/pyright.txt
-          type_status=${PIPESTATUS[0]}
-          uv run pytest -v --log-cli-level=INFO --junitxml=/tmp/pytest-results.xml 2>&1 | tee /tmp/pytest-output.txt
-          test_status=${PIPESTATUS[0]}
-          printf 'format=%s\nlint=%s\ntypes=%s\ntests=%s\n' "$format_status" "$lint_status" "$type_status" "$test_status" | tee /tmp/status.txt
-          test "$format_status" -eq 0
-          test "$lint_status" -eq 0
-          test "$type_status" -eq 0
-          test "$test_status" -eq 0
-
-      - name: Package exact applied workspace
-        if: always()
+      - name: Validate complete implementation
         shell: bash
         run: |
           set -euo pipefail
-          tar --exclude=.venv --exclude=.pytest_cache --exclude='**/__pycache__' -czf /tmp/oid-catalog-workspace.tar.gz .
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+          uv run pytest -v --log-cli-level=INFO
 
-      - name: Upload validation evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: oid-catalog-validation-evidence
-          path: |
-            /tmp/status.txt
-            /tmp/ruff-format.txt
-            /tmp/ruff-lint.txt
-            /tmp/pyright.txt
-            /tmp/pytest-output.txt
-            /tmp/pytest-results.xml
-            /tmp/oid-catalog-workspace.tar.gz
-          if-no-files-found: warn
-          retention-days: 1
+      - name: Reject unexpected workspace changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --porcelain > /tmp/status
+          allowed='^( M README.md| M src/postgres_mcp/server.py| M src/postgres_mcp/sql/results.py| M tests/unit/sql/test_results.py|\?\? docs/catalog.md|\?\? src/postgres_mcp/catalog_advanced.py|\?\? tests/integration/catalog/test_catalog_advanced_integration.py|\?\? tests/unit/catalog/test_catalog_advanced.py|\?\? tests/unit/server/test_catalog_tools.py| D \.github/patches/oid-catalog/.+| D \.github/workflows/apply-oid-catalog.yml)$'
+          unexpected=$(grep -Ev "$allowed" /tmp/status || true)
+          if [[ -n "$unexpected" ]]; then
+            printf 'Unexpected changes:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
 
-      - name: Enforce quality result
-        if: steps.quality.outcome != 'success'
-        run: exit 1
+      - name: Commit one validated domain slice
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/catalog.md \
+            src/postgres_mcp/catalog_advanced.py \
+            src/postgres_mcp/server.py \
+            src/postgres_mcp/sql/results.py \
+            tests/integration/catalog/test_catalog_advanced_integration.py \
+            tests/unit/catalog/test_catalog_advanced.py \
+            tests/unit/server/test_catalog_tools.py \
+            tests/unit/sql/test_results.py \
+            .github/patches/oid-catalog \
+            .github/workflows/apply-oid-catalog.yml
+          git diff --cached --check
+          test -z "$(git status --porcelain | grep -v '^M  \|^A  \|^D  ' || true)"
+          git commit -m "Add OID-backed catalog and type introspection"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/oid-catalog-types
