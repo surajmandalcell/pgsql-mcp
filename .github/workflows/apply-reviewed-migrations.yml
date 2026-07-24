@@ -1,12 +1,13 @@
 name: Apply reviewed migration domain
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/reviewed-migrations
-    paths:
-      - .github/transfer/reviewed-migrations/**
-      - .github/workflows/apply-reviewed-migrations.yml
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
@@ -21,10 +22,10 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout exact revision without persisted credentials
+      - name: Checkout exact PR head without persisted credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
           fetch-depth: 0
 
