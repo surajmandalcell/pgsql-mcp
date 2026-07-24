@@ -28,10 +28,10 @@ from .catalog import list_objects_data  # noqa: E402
 from .catalog import list_schemas_data  # noqa: E402
 from .explain import ExplainPlanTool  # noqa: E402
 from .runtime import ABSOLUTE_MAX_ROWS  # noqa: E402
-from .runtime import AccessMode  # noqa: E402
 from .runtime import DEFAULT_LOCK_TIMEOUT_SECONDS  # noqa: E402
 from .runtime import DEFAULT_MAX_ROWS  # noqa: E402
 from .runtime import DEFAULT_QUERY_TIMEOUT_SECONDS  # noqa: E402
+from .runtime import AccessMode  # noqa: E402
 from .runtime import QueryLimits  # noqa: E402
 from .runtime import ServerProfile  # noqa: E402
 from .sql import DbConnPool  # noqa: E402
@@ -47,9 +47,6 @@ from .sql import check_hypopg_installation_status  # noqa: E402
 from .sql import json_text  # noqa: E402
 from .sql import obfuscate_password  # noqa: E402
 from .sql import parse_single_statement  # noqa: E402
-from .transport import DEFAULT_SSE_HOST  # noqa: E402
-from .transport import DEFAULT_SSE_PATH  # noqa: E402
-from .transport import DEFAULT_SSE_PORT  # noqa: E402
 from .transport import env_number  # noqa: E402
 from .transport import run_transport  # noqa: E402
 
