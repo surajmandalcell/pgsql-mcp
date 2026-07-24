@@ -36,6 +36,8 @@ The base distribution does not require the LLM client stack. Install `pgsql-mcp[
 - `EXPLAIN ANALYZE` and hypothetical indexes are not available.
 - Values use the same precision-preserving tagged JSON fallback as the full server.
 
+The lite entry point is validated by the same lint, type, unit, packaging, and real-PostgreSQL integration suite as the full profile. A lite release therefore cannot bypass a failure in the shared safety kernel.
+
 ## MCP configuration
 
 ```json
