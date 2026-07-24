@@ -16,9 +16,21 @@ from datetime import timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any
+from typing import Protocol
+from typing import runtime_checkable
 from uuid import UUID
 
 _JSON_SAFE_INTEGER = 2**53 - 1
+
+
+@runtime_checkable
+class _RangeLike(Protocol):
+    """Structural contract implemented by psycopg range values."""
+
+    lower: Any
+    upper: Any
+    bounds: str
+    isempty: bool
 
 
 def _tag(pg_type: str, value: Any, **metadata: Any) -> dict[str, Any]:
@@ -75,9 +87,9 @@ def encode_postgres_value(value: Any) -> Any:
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return encode_postgres_value(dataclasses.asdict(value))
 
-    # Psycopg range values expose these attributes. Attribute checks avoid
-    # importing adapter classes and keep the core startup path light.
-    if all(hasattr(value, attribute) for attribute in ("lower", "upper", "bounds", "isempty")):
+    # Structural typing avoids importing psycopg's optional range adapters while
+    # still documenting and type-checking the attributes the codec consumes.
+    if isinstance(value, _RangeLike):
         return _tag(
             "range",
             {
