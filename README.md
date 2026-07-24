@@ -3,138 +3,192 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![PyPI - Version](https://img.shields.io/pypi/v/pgsql-mcp)](https://pypi.org/project/pgsql-mcp/)
 
-A PostgreSQL MCP server with index tuning, explain plans, health checks, and safe SQL execution.
+A PostgreSQL Model Context Protocol server for schema inspection, bounded SQL execution, query plans, index tuning, workload analysis, and database health diagnostics.
+
+## Safety first
+
+`pgsql-mcp` starts in **restricted mode by default**. Restricted mode accepts one validated statement per query request, executes it in a database-enforced read-only transaction, applies a statement timeout, uses native bind parameters, and returns a bounded result.
+
+Write access is never inferred from the database credential. It must be enabled explicitly with `--access-mode=unrestricted`, and write statements are exposed only through the guarded `execute_transaction` tool. All steps run on one connection and one transaction, and any validation, execution, row-count, timeout, cancellation, or commit failure rolls back the complete operation.
+
+Database credentials remain the final security boundary. Use a dedicated least-privilege role, keep network transports on loopback or behind an authenticated proxy, and read [the security model](docs/security.md) before production use.
 
 ## Features
 
-- **Database Health** - analyze index health, connection utilization, buffer cache, vacuum health, and more
-- **Index Tuning** - find optimal indexes for your workload using industrial-strength algorithms
-- **Query Plans** - review EXPLAIN plans and simulate hypothetical indexes
-- **Schema Intelligence** - context-aware SQL generation
-- **Safe SQL Execution** - configurable read-only mode for production use
+- **Schema intelligence** — inspect schemas, tables, views, sequences, columns, constraints, indexes, comments, and extensions.
+- **Bounded SQL** — single-statement execution, native parameters, hard row limits, explicit truncation metadata, and precision-safe JSON encoding.
+- **Guarded transactions** — atomic multi-step transactions with isolation controls, timeouts, required mutation ceilings, optional exact row-count checks, and rollback-on-failure guarantees.
+- **Query plans** — inspect `EXPLAIN` plans and simulate hypothetical indexes with HypoPG.
+- **Index tuning** — analyze individual queries or a `pg_stat_statements` workload.
+- **Database health** — inspect index, connection, vacuum, sequence, replication, buffer, and constraint health.
+- **Slow-query analysis** — rank workload queries by time or blended resource use.
 
-## Quick Start
+## Quick start
 
-### Claude Code / Cloud IDEs
-
-For Claude Code or cloud-based IDEs, add to your MCP configuration:
+### Claude Code and cloud IDEs
 
 ```json
 {
   "mcpServers": {
     "postgres": {
       "command": "uvx",
+      "args": ["pgsql-mcp"],
+      "env": {
+        "DATABASE_URI": "postgresql://readonly_user:password@localhost:5432/app"
+      }
+    }
+  }
+}
+```
+
+This configuration is read-only because restricted mode is the default.
+
+### Explicit write-enabled development configuration
+
+```json
+{
+  "mcpServers": {
+    "postgres-dev": {
+      "command": "uvx",
       "args": ["pgsql-mcp", "--access-mode=unrestricted"],
       "env": {
-        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+        "DATABASE_URI": "postgresql://developer:password@localhost:5432/app_dev"
       }
     }
   }
 }
 ```
 
-### VS Code / Cursor / Windsurf
+Do not reuse a production owner or superuser credential.
 
-**Using SSE (recommended for IDEs):**
+### SSE transport
 
-1. Start the server:
 ```bash
-docker run -p 8000:8000 \
-  -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
-  pgsql-mcp --access-mode=unrestricted --transport=sse
+DATABASE_URI='postgresql://readonly_user:password@localhost:5432/app' \
+  uvx pgsql-mcp --transport=sse
 ```
 
-2. Add to your MCP config (`mcp.json` for Cursor, `mcp_config.json` for Windsurf):
-
-```json
-{
-  "mcpServers": {
-    "postgres": {
-      "type": "sse",
-      "url": "http://localhost:8000/sse"
-    }
-  }
-}
-```
-
-> Note: Windsurf uses `serverUrl` instead of `url`.
-
-**Using stdio:**
-
-```json
-{
-  "mcpServers": {
-    "postgres": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "DATABASE_URI",
-        "pgsql-mcp",
-        "--access-mode=unrestricted"
-      ],
-      "env": {
-        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
-      }
-    }
-  }
-}
-```
+The SSE server binds to `localhost:8000` by default. Put it behind authentication before exposing it beyond the local machine.
 
 ### Docker
 
 ```bash
-docker pull pgsql-mcp
+docker run -i --rm \
+  -e DATABASE_URI='postgresql://readonly_user:password@host.docker.internal:5432/app' \
+  pgsql-mcp
 ```
 
-Run with stdio:
+Write-enabled development use must be explicit:
+
 ```bash
 docker run -i --rm \
-  -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
+  -e DATABASE_URI='postgresql://developer:password@host.docker.internal:5432/app_dev' \
   pgsql-mcp --access-mode=unrestricted
 ```
 
-Run with SSE:
-```bash
-docker run -p 8000:8000 \
-  -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
-  pgsql-mcp --access-mode=unrestricted --transport=sse
+## Query execution contract
+
+`execute_sql` accepts:
+
+- `sql`: exactly one PostgreSQL statement;
+- `params`: values for psycopg `%s`, `%b`, or `%t` positional placeholders;
+- `max_rows`: requested row ceiling, up to the server hard limit.
+
+Values are never interpolated into SQL by pgsql-mcp. The original SQL and parameter list are sent separately to psycopg. The safety parser receives a placeholder-normalized copy that preserves quoted strings, identifiers, comments, and dollar-quoted bodies.
+
+A result includes the command, portable column metadata, rows, returned row count, affected row count where PostgreSQL reports one, and a `truncated` flag. Large integers, arbitrary-precision numerics, binary values, temporal values, UUIDs, ranges, and unknown extension values use tagged JSON where ordinary JSON would lose information.
+
+## Atomic transaction contract
+
+`execute_transaction` is registered only in unrestricted mode. Each step supports:
+
+```json
+{
+  "sql": "UPDATE app.users SET status = %s WHERE id = %s AND version = %s RETURNING id, version",
+  "params": ["active", 42, 7],
+  "expected_rows": 1,
+  "max_affected_rows": 1,
+  "result_mode": "rows",
+  "max_rows": 10
+}
 ```
 
-### Python Installation
+The transaction tool:
 
-```bash
-pipx install pgsql-mcp
-# or
-uv pip install pgsql-mcp
-```
+1. validates every step before checking out a connection;
+2. permits only `SELECT`, `INSERT`, `UPDATE`, `DELETE`, and supported `MERGE` statements;
+3. rejects multiple statements, transaction-control statements, locking selects, `SELECT INTO`, and data-modifying CTEs;
+4. requires `WHERE` plus `max_affected_rows` for `UPDATE` and `DELETE`;
+5. requires `max_affected_rows` for every mutation;
+6. applies transaction-local statement, lock, idle-in-transaction, row-security, and search-path settings;
+7. rolls back the entire transaction on every failure, including cancellation and commit failure;
+8. reports a successful result only after `COMMIT` completes.
 
-## Access Modes
+PostgreSQL operations such as `VACUUM`, concurrent index operations, sequence advancement, and external side effects have different transactional semantics and are intentionally outside this API.
 
-- **`--access-mode=unrestricted`** - Full read/write access (development)
-- **`--access-mode=restricted`** - Read-only with resource limits (production)
+## Access modes
 
-## Optional: Postgres Extensions
+| Mode | Default | Behavior |
+|---|---:|---|
+| `restricted` | Yes | One validated statement, database-enforced read-only transaction, timeout, bounded rows |
+| `unrestricted` | No | The same read-only `execute_sql` tool plus guarded atomic transaction writes |
 
-For full index tuning capabilities, install these extensions:
+The `get_server_capabilities` tool reports the effective profile, access mode, limits, transaction availability, and result encoding.
+
+## Configuration
+
+| CLI option | Environment variable | Default |
+|---|---|---|
+| positional `database_url` | `DATABASE_URI` | required |
+| `--access-mode` | — | `restricted` |
+| `--transport` | — | `stdio` |
+| `--query-timeout` | `QUERY_TIMEOUT` | `30` seconds |
+| `--max-rows` | `MAX_ROWS` | `100` |
+| `--sse-host` | `SSE_HOST` | `localhost` |
+| `--sse-port` | `SSE_PORT` | `8000` |
+| `--sse-path` | `SSE_PATH` | `/sse` |
+| `--cors-allow-origins` | `CORS_ALLOW_ORIGINS` | unset |
+
+The absolute result ceiling is 5,000 rows. Wildcard CORS never enables credentialed cross-origin requests.
+
+## Optional PostgreSQL extensions
+
+Index and workload analysis can use:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 CREATE EXTENSION IF NOT EXISTS hypopg;
 ```
 
-## Available Tools
+Install extensions through a controlled migration or administrator workflow. Restricted query execution does not grant extension-management capability.
+
+## MCP tools
 
 | Tool | Description |
-|------|-------------|
-| `list_schemas` | List all database schemas |
-| `list_objects` | List tables, views, sequences in a schema |
-| `get_object_details` | Get columns, constraints, indexes for an object |
-| `execute_sql` | Execute SQL (read-only in restricted mode) |
-| `explain_query` | Get query execution plans with hypothetical index support |
-| `get_top_queries` | Find slowest queries via pg_stat_statements |
-| `analyze_workload_indexes` | Recommend indexes for your workload |
-| `analyze_query_indexes` | Recommend indexes for specific queries |
-| `analyze_db_health` | Run comprehensive health checks |
+|---|---|
+| `get_server_capabilities` | Report active safety policy and hard limits |
+| `list_schemas` | List database schemas |
+| `list_objects` | List tables, views, sequences, or extensions |
+| `get_object_details` | Inspect columns, constraints, indexes, and comments |
+| `execute_sql` | Execute one bounded, parameterized, read-only statement in every mode |
+| `execute_transaction` | Execute guarded steps atomically; unrestricted mode only |
+| `explain_query` | Inspect a validated read-only plan; `ANALYZE` is blocked in restricted mode |
+| `get_top_queries` | Analyze `pg_stat_statements` workload data |
+| `analyze_workload_indexes` | Recommend indexes for a workload |
+| `analyze_query_indexes` | Recommend indexes for supplied queries |
+| `analyze_db_health` | Run database health diagnostics |
+
+## Development
+
+```bash
+uv sync
+uv run ruff format --check .
+uv run ruff check .
+uv run pyright
+uv run pytest -v
+```
+
+Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md).
 
 ## License
 
