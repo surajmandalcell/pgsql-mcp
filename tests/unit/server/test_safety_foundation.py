@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from mcp.types import TextContent
 
 import postgres_mcp.server as server
 from postgres_mcp.runtime import ABSOLUTE_MAX_ROWS
@@ -19,8 +20,14 @@ from postgres_mcp.sql.transaction import TransactionExecutionError
 from postgres_mcp.sql.transaction import TransactionExecutionResult
 
 
+def response_text(response: server.ResponseType) -> str:
+    content = response[0]
+    assert isinstance(content, TextContent)
+    return content.text
+
+
 def response_payload(response: server.ResponseType) -> object:
-    return json.loads(response[0].text)
+    return json.loads(response_text(response))
 
 
 def test_server_defaults_are_restricted_and_full_profile() -> None:
@@ -125,8 +132,8 @@ async def test_unrestricted_mode_keeps_raw_sql_read_only_and_bounds_results() ->
         )
         multiple_response = await server.execute_sql("SELECT 1; SELECT 2")
 
-    assert "statement type 'update'" in write_response[0].text
-    assert multiple_response[0].text.startswith("Error: exactly one SQL statement")
+    assert "statement type 'update'" in response_text(write_response)
+    assert response_text(multiple_response).startswith("Error: exactly one SQL statement")
 
 
 @pytest.mark.asyncio
@@ -140,8 +147,8 @@ async def test_execute_sql_rejects_parameter_and_limit_errors_before_database_wo
         parameter_response = await server.execute_sql("SELECT %s", params=[])
         limit_response = await server.execute_sql("SELECT 1", max_rows=ABSOLUTE_MAX_ROWS + 1)
 
-    assert "positional placeholders" in parameter_response[0].text
-    assert "cannot exceed" in limit_response[0].text
+    assert "positional placeholders" in response_text(parameter_response)
+    assert "cannot exceed" in response_text(limit_response)
     base_driver.execute_bounded_query.assert_not_awaited()
 
 
@@ -153,7 +160,7 @@ async def test_atomic_transaction_is_unavailable_in_restricted_mode() -> None:
     )
     with patch.object(server, "current_access_mode", AccessMode.RESTRICTED):
         response = await server.execute_transaction([step])
-    assert "require --access-mode=unrestricted" in response[0].text
+    assert "require --access-mode=unrestricted" in response_text(response)
 
 
 @pytest.mark.asyncio

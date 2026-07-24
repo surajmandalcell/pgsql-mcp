@@ -47,6 +47,9 @@ from .sql import check_hypopg_installation_status  # noqa: E402
 from .sql import json_text  # noqa: E402
 from .sql import obfuscate_password  # noqa: E402
 from .sql import parse_single_statement  # noqa: E402
+from .transport import DEFAULT_SSE_HOST as DEFAULT_SSE_HOST  # noqa: E402
+from .transport import DEFAULT_SSE_PATH as DEFAULT_SSE_PATH  # noqa: E402
+from .transport import DEFAULT_SSE_PORT as DEFAULT_SSE_PORT  # noqa: E402
 from .transport import env_number  # noqa: E402
 from .transport import run_transport  # noqa: E402
 

@@ -125,6 +125,11 @@ class DbConnPool:
             except Exception as exc:
                 logger.warning("Error closing connection pool: %s", exc)
 
+    def mark_invalid(self, error: BaseException) -> None:
+        """Record a connection-level failure without exposing mutable internals."""
+        self._is_valid = False
+        self._last_error = str(error)
+
     @property
     def is_valid(self) -> bool:
         return self._is_valid
@@ -183,8 +188,7 @@ class SqlDriver:
         if not isinstance(root_error, (OperationalError, InterfaceError)):
             return
         if self.conn is not None and self.is_pool:
-            self.conn._is_valid = False
-            self.conn._last_error = str(root_error)
+            self.conn.mark_invalid(root_error)
         elif self.conn is not None:
             self.conn = None
 
