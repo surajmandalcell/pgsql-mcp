@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 from pydantic import Field
-from pydantic import validate_call
 
 load_dotenv()
 
@@ -318,7 +317,6 @@ async def execute_transaction(
 
 
 @mcp.tool(description="Analyze frequently executed queries and recommend indexes")
-@validate_call
 async def analyze_workload_indexes(
     max_index_size_mb: int = 10_000,
     method: Literal["dta", "llm"] = "dta",
@@ -344,7 +342,6 @@ async def analyze_workload_indexes(
 
 
 @mcp.tool(description="Analyze up to ten SQL queries and recommend indexes")
-@validate_call
 async def analyze_query_indexes(
     queries: list[str],
     max_index_size_mb: int = 10_000,
