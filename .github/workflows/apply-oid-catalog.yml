@@ -43,16 +43,21 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Reconstruct the canonical replacement payload
+      - name: Verify and reconstruct the exact reviewed patch
         shell: bash
         run: |
           set -euo pipefail
           : > /tmp/oid-catalog.patch.b64
-          for prefix in p00 p01; do
-            for index in 0 1 2 3 4 5; do
-              file=$(printf '.github/patches/oid-catalog/%s-%02d' "$prefix" "$index")
-              tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
-            done
+          for index in 0 1 2 3 4; do
+            file=$(printf '.github/patches/oid-catalog/p00-%02d' "$index")
+            tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
+          done
+          for suffix in a b c; do
+            tr -d '[:space:]' < ".github/patches/oid-catalog/p00-05${suffix}" >> /tmp/oid-catalog.patch.b64
+          done
+          for index in 0 1 2 3 4 5; do
+            file=$(printf '.github/patches/oid-catalog/p01-%02d' "$index")
+            tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
           done
           for index in 2 3 4; do
             file=$(printf '.github/patches/oid-catalog/part%02d' "$index")
@@ -62,21 +67,7 @@ jobs:
             file=$(printf '.github/patches/oid-catalog/p05-%02d' "$index")
             tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
           done
-          printf 'combined-base64-sha256=%s\n' "$(sha256sum /tmp/oid-catalog.patch.b64 | cut -d' ' -f1)"
-          printf 'combined-base64-bytes=%s\n' "$(wc -c < /tmp/oid-catalog.patch.b64)"
-
-      - name: Upload replacement payload for byte comparison
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: oid-catalog-replacement-payload
-          path: /tmp/oid-catalog.patch.b64
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Verify the exact reviewed patch
-        shell: bash
-        run: |
-          set -euo pipefail
+          test "$(wc -c < /tmp/oid-catalog.patch.b64)" -eq 101412
           test "$(sha256sum /tmp/oid-catalog.patch.b64 | cut -d' ' -f1)" = "7f549138656ed419cb37960b25e03de71791c46a8cdf95bb3335f4c0382c2fab"
           base64 --decode /tmp/oid-catalog.patch.b64 > /tmp/oid-catalog.patch
           test "$(sha256sum /tmp/oid-catalog.patch | cut -d' ' -f1)" = "7a9496805fbf9ec119f13e4cbaccb39eac68a7f6b99e3f17a1df5f1cb17bcc5b"
