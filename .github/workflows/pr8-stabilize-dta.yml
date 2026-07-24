@@ -1,11 +1,11 @@
 name: Stabilize DTA integration assertion
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/lite-profile
-    paths:
-      - .github/workflows/pr8-stabilize-dta.yml
+      - main
+    types:
+      - synchronize
 
 permissions:
   contents: write
