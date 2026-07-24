@@ -336,9 +336,7 @@ async def analyze_workload_indexes(
             except ImportError:
                 return format_error_response("LLM index analysis dependencies are not installed")
             optimizer = LLMOptimizerTool(sql_driver)
-        result = await TextPresentation(sql_driver, optimizer).analyze_workload(
-            max_index_size_mb=max_index_size_mb
-        )
+        result = await TextPresentation(sql_driver, optimizer).analyze_workload(max_index_size_mb=max_index_size_mb)
         return format_text_response(result)
     except Exception as exc:
         logger.exception("Error analyzing workload")
@@ -448,15 +446,9 @@ async def main() -> None:
     global current_query_timeout
     current_access_mode = AccessMode(args.access_mode)
     current_query_timeout = (
-        args.query_timeout
-        if args.query_timeout is not None
-        else float(env_number("QUERY_TIMEOUT", DEFAULT_QUERY_TIMEOUT_SECONDS, float))
+        args.query_timeout if args.query_timeout is not None else float(env_number("QUERY_TIMEOUT", DEFAULT_QUERY_TIMEOUT_SECONDS, float))
     )
-    current_max_rows = (
-        args.max_rows
-        if args.max_rows is not None
-        else int(env_number("MAX_ROWS", DEFAULT_MAX_ROWS, int))
-    )
+    current_max_rows = args.max_rows if args.max_rows is not None else int(env_number("MAX_ROWS", DEFAULT_MAX_ROWS, int))
     QueryLimits(
         timeout_seconds=current_query_timeout,
         default_max_rows=current_max_rows,

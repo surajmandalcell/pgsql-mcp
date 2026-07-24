@@ -264,9 +264,7 @@ def sql_for_validation(sql: str, *, parameter_count: int | None = None) -> str:
         # before placeholder-count validation can obscure the syntax failure.
         raise TransactionValidationError("unterminated quoted SQL region")
     if parameter_count is not None and placeholder_count != parameter_count:
-        raise TransactionValidationError(
-            f"SQL contains {placeholder_count} positional placeholders but {parameter_count} parameters were provided"
-        )
+        raise TransactionValidationError(f"SQL contains {placeholder_count} positional placeholders but {parameter_count} parameters were provided")
     return "".join(output)
 
 
@@ -375,11 +373,7 @@ def validate_transaction_steps(
             raise TransactionValidationError(f"step {index}: max_rows must be between 1 and {absolute_max_rows}")
         if step.expected_rows is not None and step.expected_rows < 0:
             raise TransactionValidationError(f"step {index}: expected_rows cannot be negative")
-        if (
-            step.expected_rows is not None
-            and step.max_affected_rows is not None
-            and step.expected_rows > step.max_affected_rows
-        ):
+        if step.expected_rows is not None and step.max_affected_rows is not None and step.expected_rows > step.max_affected_rows:
             raise TransactionValidationError(f"step {index}: expected_rows cannot exceed max_affected_rows")
 
         statement = parse_single_statement(step.sql, parameter_count=len(step.params))

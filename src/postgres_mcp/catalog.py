@@ -189,10 +189,7 @@ async def get_object_details_data(
                 for row in column_rows or []
             ],
             "constraints": [{"name": name, **data} for name, data in constraints.items()],
-            "indexes": [
-                {"name": row.cells["indexname"], "definition": row.cells["indexdef"]}
-                for row in index_rows or []
-            ],
+            "indexes": [{"name": row.cells["indexname"], "definition": row.cells["indexdef"]} for row in index_rows or []],
         }
     if object_type == "sequence":
         rows = await SafeSqlDriver.execute_param_query(

@@ -64,9 +64,7 @@ class SafeQueryValidator(SafeSqlDriver):
         statement = parse_single_statement(query, parameter_count=parameter_count)
         if not isinstance(statement, _PUBLIC_READONLY_STATEMENTS):
             statement_name = type(statement).__name__.removesuffix("Stmt").lower()
-            raise TransactionValidationError(
-                f"statement type '{statement_name}' is not allowed in public read-only queries"
-            )
+            raise TransactionValidationError(f"statement type '{statement_name}' is not allowed in public read-only queries")
         _reject_session_mutation(statement)
         self._validate(validation_query)  # pyright: ignore[reportPrivateUsage]
 

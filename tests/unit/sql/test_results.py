@@ -94,9 +94,7 @@ def test_encode_container_enum_dataclass_range_and_unknown() -> None:
         "name": "ACTIVE",
     }
     assert encode_postgres_value(TextStatus.ACTIVE)["$pg_type"] == "enum"
-    assert encode_postgres_value({1: [Decimal("1.1")]}) == {
-        "1": [{"$pg_type": "numeric", "value": "1.1"}]
-    }
+    assert encode_postgres_value({1: [Decimal("1.1")]}) == {"1": [{"$pg_type": "numeric", "value": "1.1"}]}
     assert encode_postgres_value(Record(count=2)) == {"count": 2}
     encoded_range = encode_postgres_value(FakeRange())
     assert encoded_range == {

@@ -201,9 +201,7 @@ async def test_atomic_transaction_maps_models_and_returns_commit_payload() -> No
 @pytest.mark.asyncio
 async def test_atomic_transaction_returns_explicit_rollback_payload() -> None:
     base_driver = MagicMock()
-    base_driver.execute_transaction = AsyncMock(
-        side_effect=TransactionExecutionError("row guard failed", failed_step=0)
-    )
+    base_driver.execute_transaction = AsyncMock(side_effect=TransactionExecutionError("row guard failed", failed_step=0))
     step = server.TransactionStepInput(
         sql="DELETE FROM public.items WHERE id = 1",
         max_affected_rows=1,
@@ -225,10 +223,7 @@ async def test_atomic_transaction_returns_explicit_rollback_payload() -> None:
 
 
 def test_full_server_import_does_not_load_llm_optimizer() -> None:
-    code = (
-        "import sys; import postgres_mcp.server; "
-        "assert 'postgres_mcp.index.llm_opt' not in sys.modules"
-    )
+    code = "import sys; import postgres_mcp.server; assert 'postgres_mcp.index.llm_opt' not in sys.modules"
     completed = subprocess.run(
         [sys.executable, "-c", code],
         check=False,

@@ -452,11 +452,7 @@ class SqlDriver:
                             f"step {index} affected {affected_rows!r} rows; expected {step.expected_rows}",
                             failed_step=index,
                         )
-                    if (
-                        step.max_affected_rows is not None
-                        and affected_rows is not None
-                        and affected_rows > step.max_affected_rows
-                    ):
+                    if step.max_affected_rows is not None and affected_rows is not None and affected_rows > step.max_affected_rows:
                         raise TransactionExecutionError(
                             f"step {index} affected {affected_rows} rows; maximum is {step.max_affected_rows}",
                             failed_step=index,
