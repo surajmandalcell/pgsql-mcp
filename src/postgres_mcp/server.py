@@ -129,10 +129,11 @@ async def get_server_capabilities() -> ResponseType:
             "query": {
                 "single_statement": True,
                 "native_parameters": True,
+                "raw_sql_writes": False,
                 "default_max_rows": current_max_rows,
                 "absolute_max_rows": ABSOLUTE_MAX_ROWS,
                 "timeout_seconds": current_query_timeout,
-                "read_only_transaction": current_access_mode is AccessMode.RESTRICTED,
+                "read_only_transaction": True,
             },
             "transactions": {
                 "available": current_access_mode is AccessMode.UNRESTRICTED,
@@ -205,6 +206,10 @@ async def explain_query(
         return format_error_response("EXPLAIN ANALYZE is disabled in restricted mode because it executes the statement")
     try:
         sql_driver = await get_sql_driver()
+        SafeQueryExecutor(
+            get_base_sql_driver(),
+            timeout_seconds=current_query_timeout,
+        ).validator.validate_query(sql, parameter_count=0)
         explain_tool = ExplainPlanTool(sql_driver=sql_driver)
         result: ExplainPlanArtifact | ErrorResult | None
         if hypothetical_indexes:
@@ -240,7 +245,7 @@ async def execute_sql(
         Field(description="Maximum rows returned", ge=1, le=ABSOLUTE_MAX_ROWS),
     ] = None,
 ) -> ResponseType:
-    """Execute exactly one bounded statement."""
+    """Execute exactly one bounded read-only statement."""
     try:
         limits = QueryLimits(
             timeout_seconds=current_query_timeout,
@@ -250,24 +255,14 @@ async def execute_sql(
         limits.validate()
         row_limit = limits.checked_row_limit(max_rows)
         parse_single_statement(sql, parameter_count=len(params) if params is not None else 0)
-        base_driver = get_base_sql_driver()
-        if current_access_mode is AccessMode.RESTRICTED:
-            result = await SafeQueryExecutor(
-                base_driver,
-                timeout_seconds=current_query_timeout,
-            ).execute_bounded_query(
-                sql,  # type: ignore[arg-type]
-                params=params,
-                max_rows=row_limit,
-            )
-        else:
-            result = await base_driver.execute_bounded_query(
-                sql,  # type: ignore[arg-type]
-                params=params,
-                max_rows=row_limit,
-                force_readonly=False,
-                timeout_seconds=current_query_timeout,
-            )
+        result = await SafeQueryExecutor(
+            get_base_sql_driver(),
+            timeout_seconds=current_query_timeout,
+        ).execute_bounded_query(
+            sql,  # type: ignore[arg-type]
+            params=params,
+            max_rows=row_limit,
+        )
         return format_text_response(result.to_payload())
     except (TransactionValidationError, ValueError) as exc:
         return format_error_response(str(exc))
@@ -468,12 +463,10 @@ async def main() -> None:
         absolute_max_rows=ABSOLUTE_MAX_ROWS,
     ).validate()
 
-    description = (
-        "Execute exactly one read-only, parameterized SQL statement with bounded results"
-        if current_access_mode is AccessMode.RESTRICTED
-        else "Execute exactly one parameterized SQL statement with bounded results"
+    mcp.add_tool(
+        execute_sql,
+        description="Execute exactly one read-only, parameterized SQL statement with bounded results",
     )
-    mcp.add_tool(execute_sql, description=description)
     if current_access_mode is AccessMode.UNRESTRICTED:
         mcp.add_tool(
             execute_transaction,
