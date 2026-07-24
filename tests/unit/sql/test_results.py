@@ -159,6 +159,7 @@ def test_bounded_result_payload_and_compact_json() -> None:
     )
     payload = result.to_payload()
     assert payload["truncated"] is True
+    assert payload["columns"][0]["type_oid"] == 1700
     assert payload["rows"][0]["amount"] == {"$pg_type": "numeric", "value": "10.50"}
     rendered = json_text(payload)
     assert " " not in rendered

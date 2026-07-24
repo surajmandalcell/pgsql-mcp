@@ -25,6 +25,12 @@ from .artifacts import ExplainPlanArtifact  # noqa: E402
 from .catalog import get_object_details_data  # noqa: E402
 from .catalog import list_objects_data  # noqa: E402
 from .catalog import list_schemas_data  # noqa: E402
+from .catalog_advanced import get_postgres_type_data  # noqa: E402
+from .catalog_advanced import get_relation_details_data  # noqa: E402
+from .catalog_advanced import get_server_info_data  # noqa: E402
+from .catalog_advanced import list_postgres_types_data  # noqa: E402
+from .catalog_advanced import list_relations_data  # noqa: E402
+from .catalog_advanced import search_catalog_data  # noqa: E402
 from .explain import ExplainPlanTool  # noqa: E402
 from .runtime import ABSOLUTE_MAX_ROWS  # noqa: E402
 from .runtime import DEFAULT_LOCK_TIMEOUT_SECONDS  # noqa: E402
@@ -139,6 +145,19 @@ async def get_server_capabilities() -> ResponseType:
                 "supported_statements": ["select", "insert", "update", "delete", "merge"],
                 "write_guards": ["where_required", "max_affected_rows", "expected_rows"],
             },
+            "catalog": {
+                "oid_backed": True,
+                "relations": True,
+                "routines": True,
+                "partitions": True,
+                "policies": True,
+                "privileges": True,
+            },
+            "postgres_types": {
+                "dynamic": True,
+                "supported_kinds": ["array", "base", "composite", "domain", "enum", "multirange", "pseudo", "range"],
+                "unknown_extension_types": "preserved_with_oid_and_tagged_value",
+            },
             "result_encoding": "lossless-tagged-json-fallback",
         }
     )
@@ -188,6 +207,144 @@ async def get_object_details(
         )
     except Exception as exc:
         logger.exception("Error getting object details")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Report PostgreSQL version, database, role, recovery, locale, and installed extensions")
+async def get_server_info() -> ResponseType:
+    """Return server metadata from trusted, bounded catalog queries."""
+    try:
+        return format_text_response(await get_server_info_data(get_base_sql_driver()))
+    except Exception as exc:
+        logger.exception("Error getting server information")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Search relations, routines, types, collations, and extensions")
+async def search_catalog(
+    term: Annotated[str, Field(description="Case-insensitive name or comment fragment")],
+    schema_name: Annotated[str | None, Field(description="Optional exact schema filter")] = None,
+    object_kind: Annotated[str | None, Field(description="Optional exact object-kind filter")] = None,
+    include_system: Annotated[bool, Field(description="Include pg_catalog and other system schemas")] = False,
+    limit: Annotated[int, Field(description="Maximum matches", ge=1, le=500)] = 100,
+    offset: Annotated[int, Field(description="Result offset", ge=0)] = 0,
+) -> ResponseType:
+    """Search the PostgreSQL catalog without executing user-provided SQL."""
+    try:
+        return format_text_response(
+            await search_catalog_data(
+                get_base_sql_driver(),
+                term=term,
+                schema_name=schema_name,
+                object_kind=object_kind,
+                include_system=include_system,
+                limit=limit,
+                offset=offset,
+            )
+        )
+    except Exception as exc:
+        logger.exception("Error searching PostgreSQL catalog")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="List tables, partitions, views, sequences, foreign tables, indexes, and other relations")
+async def list_relations(
+    schema_name: Annotated[str | None, Field(description="Optional exact schema filter")] = None,
+    relation_kind: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Optional kind: table, partitioned_table, view, materialized_view, sequence, "
+                "foreign_table, index, partitioned_index, composite, or toast"
+            )
+        ),
+    ] = None,
+    include_system: Annotated[bool, Field(description="Include system schemas")] = False,
+    limit: Annotated[int, Field(description="Maximum relations", ge=1, le=500)] = 100,
+    offset: Annotated[int, Field(description="Result offset", ge=0)] = 0,
+) -> ResponseType:
+    """List relation classes with ownership, storage, partition, and RLS metadata."""
+    try:
+        return format_text_response(
+            await list_relations_data(
+                get_base_sql_driver(),
+                schema_name=schema_name,
+                relation_kind=relation_kind,
+                include_system=include_system,
+                limit=limit,
+                offset=offset,
+            )
+        )
+    except Exception as exc:
+        logger.exception("Error listing PostgreSQL relations")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Inspect a relation's columns, constraints, indexes, triggers, policies, partitions, and privileges")
+async def get_relation_details(
+    schema_name: Annotated[str, Field(description="Exact schema name")],
+    relation_name: Annotated[str, Field(description="Exact relation name")],
+) -> ResponseType:
+    """Return complete relation metadata while preserving PostgreSQL type OIDs."""
+    try:
+        return format_text_response(
+            await get_relation_details_data(
+                get_base_sql_driver(),
+                schema_name=schema_name,
+                relation_name=relation_name,
+            )
+        )
+    except Exception as exc:
+        logger.exception("Error getting PostgreSQL relation details")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="List built-in, user-defined, and extension-owned PostgreSQL types by OID")
+async def list_postgres_types(
+    schema_name: Annotated[str | None, Field(description="Optional exact schema filter")] = None,
+    type_kind: Annotated[
+        str | None,
+        Field(description="Optional kind: array, base, composite, domain, enum, multirange, pseudo, or range"),
+    ] = None,
+    include_system: Annotated[bool, Field(description="Include system types")] = False,
+    limit: Annotated[int, Field(description="Maximum types", ge=1, le=500)] = 100,
+    offset: Annotated[int, Field(description="Result offset", ge=0)] = 0,
+) -> ResponseType:
+    """List every PostgreSQL type family through the live system catalog."""
+    try:
+        return format_text_response(
+            await list_postgres_types_data(
+                get_base_sql_driver(),
+                schema_name=schema_name,
+                type_kind=type_kind,
+                include_system=include_system,
+                limit=limit,
+                offset=offset,
+            )
+        )
+    except Exception as exc:
+        logger.exception("Error listing PostgreSQL types")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Inspect any PostgreSQL type, including enum, domain, composite, range, multirange, array, and extension types")
+async def get_postgres_type(
+    type_oid: Annotated[int | None, Field(description="Exact PostgreSQL type OID", ge=1)] = None,
+    schema_name: Annotated[str | None, Field(description="Type schema when OID is omitted")] = None,
+    type_name: Annotated[str | None, Field(description="Type name when OID is omitted")] = None,
+) -> ResponseType:
+    """Return dynamic OID-backed metadata for one PostgreSQL type."""
+    try:
+        return format_text_response(
+            await get_postgres_type_data(
+                get_base_sql_driver(),
+                type_oid=type_oid,
+                schema_name=schema_name,
+                type_name=type_name,
+            )
+        )
+    except Exception as exc:
+        logger.exception("Error getting PostgreSQL type details")
         return format_error_response(str(exc))
 
 

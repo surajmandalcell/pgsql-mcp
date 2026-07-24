@@ -120,9 +120,11 @@ class ColumnInfo:
     null_ok: bool | None = None
 
     def to_payload(self) -> dict[str, Any]:
+        """Return DB-API metadata plus the PostgreSQL OID when available."""
         return {
             "name": self.name,
             "type_code": self.type_code,
+            "type_oid": self.type_code if isinstance(self.type_code, int) else None,
             "internal_size": self.internal_size,
             "precision": self.precision,
             "scale": self.scale,
