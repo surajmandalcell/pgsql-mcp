@@ -64,6 +64,16 @@ jobs:
           uv run ruff format --check .
           uv run ruff check .
 
+      - name: Capture Pyright diagnostics
+        run: uv run pyright --outputjson > pyright.json || true
+
+      - name: Upload Pyright diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyright-diagnostics
+          path: pyright.json
+          if-no-files-found: error
+
       - name: Run Check
         run: uv run pyright
 
