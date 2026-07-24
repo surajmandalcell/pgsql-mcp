@@ -32,7 +32,7 @@ def test_placeholder_scanner_preserves_quoted_regions_and_comments() -> None:
 
 def test_placeholder_scanner_handles_escape_strings_and_literal_percent() -> None:
     rendered = sql_for_validation(r"SELECT E'it\'s %s', 10 %% 3, %b, %t", parameter_count=2)
-    assert "E'it's %s'" in rendered
+    assert r"E'it\'s %s'" in rendered
     assert "10 % 3" in rendered
     assert rendered.endswith("NULL, NULL")
 
