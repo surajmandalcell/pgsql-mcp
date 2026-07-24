@@ -58,9 +58,12 @@ jobs:
           : > /tmp/oid-catalog.patch.b64
           for index in 0 1 2 3 4 5; do
             file=$(printf '.github/patches/oid-catalog/part%02d' "$index")
-            actual=$(sha256sum "$file" | cut -d' ' -f1)
+            canonical=$(printf '/tmp/oid-catalog.part%02d' "$index")
+            tr -d '[:space:]' < "$file" > "$canonical"
+            actual=$(sha256sum "$canonical" | cut -d' ' -f1)
+            printf 'part%02d actual=%s expected=%s\n' "$index" "$actual" "${expected[$index]}"
             test "$actual" = "${expected[$index]}"
-            cat "$file" >> /tmp/oid-catalog.patch.b64
+            cat "$canonical" >> /tmp/oid-catalog.patch.b64
           done
           test "$(sha256sum /tmp/oid-catalog.patch.b64 | cut -d' ' -f1)" = "7f549138656ed419cb37960b25e03de71791c46a8cdf95bb3335f4c0382c2fab"
           base64 --decode /tmp/oid-catalog.patch.b64 > /tmp/oid-catalog.patch
