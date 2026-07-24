@@ -36,6 +36,21 @@ class IsolationLevel(str, Enum):
         return self.value.upper()
 
 
+_BEGIN_STATEMENTS: dict[tuple[IsolationLevel, bool], str] = {
+    (IsolationLevel.READ_COMMITTED, True): "BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY",
+    (IsolationLevel.READ_COMMITTED, False): "BEGIN ISOLATION LEVEL READ COMMITTED READ WRITE",
+    (IsolationLevel.REPEATABLE_READ, True): "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+    (IsolationLevel.REPEATABLE_READ, False): "BEGIN ISOLATION LEVEL REPEATABLE READ READ WRITE",
+    (IsolationLevel.SERIALIZABLE, True): "BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY",
+    (IsolationLevel.SERIALIZABLE, False): "BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE",
+}
+
+
+def build_begin_statement(isolation: IsolationLevel, *, read_only: bool) -> str:
+    """Return an allowlisted PostgreSQL transaction-start statement."""
+    return _BEGIN_STATEMENTS[(isolation, read_only)]
+
+
 class ResultMode(str, Enum):
     """Controls how much data a transaction step returns."""
 

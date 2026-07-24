@@ -32,6 +32,7 @@ from .transaction import TransactionExecutionResult
 from .transaction import TransactionStep
 from .transaction import TransactionStepResult
 from .transaction import ValidatedTransactionStep
+from .transaction import build_begin_statement
 from .transaction import validate_transaction_steps
 
 logger = logging.getLogger(__name__)
@@ -418,9 +419,8 @@ class SqlDriver:
         results: list[TransactionStepResult] = []
         try:
             async with connection.cursor() as control_cursor:
-                access_clause = "READ ONLY" if read_only else "READ WRITE"
                 transaction_started = True
-                await control_cursor.execute(f"BEGIN ISOLATION LEVEL {isolation.sql} {access_clause}")
+                await control_cursor.execute(build_begin_statement(isolation, read_only=read_only))
                 await control_cursor.execute(
                     "SELECT set_config('statement_timeout', %s, true)",
                     [f"{max(1, int(timeout_seconds * 1000))}ms"],

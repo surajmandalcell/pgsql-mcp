@@ -12,6 +12,7 @@ from postgres_mcp.sql.transaction import TransactionExecutionResult
 from postgres_mcp.sql.transaction import TransactionStep
 from postgres_mcp.sql.transaction import TransactionStepResult
 from postgres_mcp.sql.transaction import TransactionValidationError
+from postgres_mcp.sql.transaction import build_begin_statement
 from postgres_mcp.sql.transaction import parse_single_statement
 from postgres_mcp.sql.transaction import validate_transaction_steps
 
@@ -33,6 +34,12 @@ def test_isolation_sql() -> None:
     assert IsolationLevel.READ_COMMITTED.sql == "READ COMMITTED"
     assert IsolationLevel.REPEATABLE_READ.sql == "REPEATABLE READ"
     assert IsolationLevel.SERIALIZABLE.sql == "SERIALIZABLE"
+
+
+def test_begin_statement_builder_is_fully_allowlisted() -> None:
+    assert build_begin_statement(IsolationLevel.READ_COMMITTED, read_only=True) == ("BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY")
+    assert build_begin_statement(IsolationLevel.REPEATABLE_READ, read_only=False) == ("BEGIN ISOLATION LEVEL REPEATABLE READ READ WRITE")
+    assert build_begin_statement(IsolationLevel.SERIALIZABLE, read_only=True) == ("BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY")
 
 
 @pytest.mark.parametrize("sql", ["", "   "])

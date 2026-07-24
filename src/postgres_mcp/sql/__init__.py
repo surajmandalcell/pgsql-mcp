@@ -24,6 +24,7 @@ from .transaction import TransactionExecutionError
 from .transaction import TransactionExecutionResult
 from .transaction import TransactionStep
 from .transaction import TransactionValidationError
+from .transaction import build_begin_statement
 from .transaction import parse_single_statement
 from .transaction import validate_transaction_steps
 
@@ -44,6 +45,7 @@ __all__ = [
     "TransactionExecutionResult",
     "TransactionStep",
     "TransactionValidationError",
+    "build_begin_statement",
     "check_extension",
     "check_hypopg_installation_status",
     "check_postgres_version_requirement",
