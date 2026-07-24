@@ -38,16 +38,19 @@ jobs:
       - name: Build
         run: uv sync
 
-      - name: Capture Ruff formatter patch
+      - name: Capture Ruff diagnostics
         run: |
           uv run ruff format .
           git diff --binary > ruff-format.diff
+          uv run ruff check --output-format=json . > ruff-check.json || true
 
-      - name: Upload Ruff formatter patch
+      - name: Upload Ruff diagnostics
         uses: actions/upload-artifact@v4
         with:
-          name: ruff-format-patch
-          path: ruff-format.diff
+          name: ruff-diagnostics
+          path: |
+            ruff-format.diff
+            ruff-check.json
           if-no-files-found: error
 
       - name: Run Lint
