@@ -19,6 +19,7 @@ from psycopg_pool import AsyncConnectionPool
 from typing_extensions import LiteralString
 
 from postgres_mcp.runtime import ABSOLUTE_MAX_ROWS
+from postgres_mcp.runtime import DEFAULT_LOCK_TIMEOUT_SECONDS
 from postgres_mcp.runtime import DEFAULT_POOL_MAX_SIZE
 from postgres_mcp.runtime import DEFAULT_POOL_MIN_SIZE
 
@@ -176,11 +177,14 @@ class SqlDriver:
             yield self.conn
 
     def _mark_connection_failure(self, exc: Exception) -> None:
-        if not isinstance(exc, (OperationalError, InterfaceError)):
+        root_error: BaseException = exc
+        while root_error.__cause__ is not None:
+            root_error = root_error.__cause__
+        if not isinstance(root_error, (OperationalError, InterfaceError)):
             return
         if self.conn is not None and self.is_pool:
             self.conn._is_valid = False
-            self.conn._last_error = str(exc)
+            self.conn._last_error = str(root_error)
         elif self.conn is not None:
             self.conn = None
 
@@ -294,10 +298,21 @@ class SqlDriver:
                 transaction_started = True
                 if timeout_seconds is not None:
                     timeout_ms = max(1, int(timeout_seconds * 1000))
+                    lock_timeout_ms = max(1, int(min(timeout_seconds, DEFAULT_LOCK_TIMEOUT_SECONDS) * 1000))
                     await cursor.execute(
                         "SELECT set_config('statement_timeout', %s, true)",
                         [f"{timeout_ms}ms"],
                     )
+                    await cursor.execute(
+                        "SELECT set_config('lock_timeout', %s, true)",
+                        [f"{lock_timeout_ms}ms"],
+                    )
+                    await cursor.execute(
+                        "SELECT set_config('idle_in_transaction_session_timeout', %s, true)",
+                        [f"{timeout_ms}ms"],
+                    )
+                await cursor.execute("SELECT set_config('row_security', 'on', true)")
+                await cursor.execute("SELECT set_config('search_path', 'pg_catalog, public', true)")
 
                 if params:
                     await cursor.execute(query, params)
@@ -409,6 +424,10 @@ class SqlDriver:
                 await control_cursor.execute(
                     "SELECT set_config('lock_timeout', %s, true)",
                     [f"{max(1, int(lock_timeout_seconds * 1000))}ms"],
+                )
+                await control_cursor.execute(
+                    "SELECT set_config('idle_in_transaction_session_timeout', %s, true)",
+                    [f"{max(1, int(timeout_seconds * 1000))}ms"],
                 )
                 await control_cursor.execute("SELECT set_config('row_security', 'on', true)")
                 await control_cursor.execute("SELECT set_config('search_path', 'pg_catalog, public', true)")
