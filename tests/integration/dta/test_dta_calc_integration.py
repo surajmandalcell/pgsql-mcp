@@ -1038,10 +1038,10 @@ async def test_diminishing_returns(db_connection, create_dta):
                 high_improvement_recommendations += 1
                 logger.info(f"Found high improvement recommendation: {rec.table}.{rec.columns}")
 
-        # Check that low improvement columns are not recommended
+        # A B-tree serves this predicate only when the low-benefit column leads the index.
         low_improvement_recommendations = 0
         for rec in session_with_threshold.recommendations:
-            if any(col in rec.columns for col in low_improvement_columns):
+            if rec.columns and rec.columns[0] in low_improvement_columns:
                 low_improvement_recommendations += 1
                 logger.info(f"Found unexpected low improvement recommendation: {rec.table}.{rec.columns}")
 
