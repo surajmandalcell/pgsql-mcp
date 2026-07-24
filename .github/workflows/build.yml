@@ -50,12 +50,16 @@ jobs:
         run: uv run pyright
 
       - name: Run Tests
-        run: uv run pytest -v --log-cli-level=INFO --junitxml=pytest-results.xml
+        run: |
+          set -o pipefail
+          uv run pytest -v --log-cli-level=INFO --junitxml=pytest-results.xml 2>&1 | tee pytest-output.txt
 
-      - name: Upload test results
+      - name: Upload test diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pytest-results
-          path: pytest-results.xml
-          if-no-files-found: warn
+          name: pytest-diagnostics
+          path: |
+            pytest-output.txt
+            pytest-results.xml
+          if-no-files-found: error
