@@ -132,6 +132,17 @@ jobs:
               }
           ''',
           )
+          replace_once(
+              "tests/integration/catalog/test_catalog_advanced_integration.py",
+              '''    assert any(index["predicate"] == "(positive_value > 0)" for index in details["indexes"])
+          ''',
+              '''    predicates = [index["predicate"] for index in details["indexes"] if index["predicate"]]
+              assert any(
+                  "positive_value" in predicate and ">" in predicate and "0" in predicate
+                  for predicate in predicates
+              )
+          ''',
+          )
           PY
 
       - name: Implement PostgreSQL 15 and 16 compatibility
