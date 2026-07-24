@@ -4,25 +4,24 @@ on:
   push:
     branches:
       - main
-    paths-ignore:
-      - "**/README.md"
   pull_request:
     types: [opened, synchronize, reopened]
-    paths-ignore:
-      - "**/README.md"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: pgsql-mcp-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pgsql-mcp-ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout PR head
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,44 +39,16 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Build
-        run: uv sync
+      - name: Install dependencies
+        run: uv sync --frozen
 
-      - name: Apply psycopg driver regression fix
-        run: python tools/apply_driver_regression_fix.py
-
-      - name: Format driver changes
-        run: |
-          uv run ruff check --fix .
-          uv run ruff format .
-
-      - name: Commit driver regression fix
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add --all
-          git commit -m "Fix psycopg result-set and rollback handling"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
-
-      - name: Run Lint
+      - name: Check formatting and lint
         run: |
           uv run ruff format --check .
           uv run ruff check .
 
-      - name: Run Check
+      - name: Check types
         run: uv run pyright
 
-      - name: Run Tests
-        run: |
-          set -o pipefail
-          uv run pytest -v --log-cli-level=INFO --junitxml=pytest-results.xml 2>&1 | tee pytest-output.txt
-
-      - name: Upload test diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-diagnostics
-          path: |
-            pytest-output.txt
-            pytest-results.xml
-          if-no-files-found: error
+      - name: Run tests
+        run: uv run pytest -v --log-cli-level=INFO
