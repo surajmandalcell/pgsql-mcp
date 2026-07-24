@@ -43,12 +43,18 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Reconstruct the canonical transfer payload
+      - name: Verify and reconstruct the exact reviewed patch
         shell: bash
         run: |
           set -euo pipefail
           : > /tmp/oid-catalog.patch.b64
-          for index in 0 1 2 3 4; do
+          for prefix in p00 p01; do
+            for index in 0 1 2 3 4 5; do
+              file=$(printf '.github/patches/oid-catalog/%s-%02d' "$prefix" "$index")
+              tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
+            done
+          done
+          for index in 2 3 4; do
             file=$(printf '.github/patches/oid-catalog/part%02d' "$index")
             tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
           done
@@ -56,20 +62,6 @@ jobs:
             file=$(printf '.github/patches/oid-catalog/p05-%02d' "$index")
             tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
           done
-          printf 'combined-base64-sha256=%s\n' "$(sha256sum /tmp/oid-catalog.patch.b64 | cut -d' ' -f1)"
-
-      - name: Upload reconstructed payload for byte comparison
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: oid-catalog-transfer-payload
-          path: /tmp/oid-catalog.patch.b64
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Verify the exact reviewed patch
-        shell: bash
-        run: |
-          set -euo pipefail
           test "$(sha256sum /tmp/oid-catalog.patch.b64 | cut -d' ' -f1)" = "7f549138656ed419cb37960b25e03de71791c46a8cdf95bb3335f4c0382c2fab"
           base64 --decode /tmp/oid-catalog.patch.b64 > /tmp/oid-catalog.patch
           test "$(sha256sum /tmp/oid-catalog.patch | cut -d' ' -f1)" = "7a9496805fbf9ec119f13e4cbaccb39eac68a7f6b99e3f17a1df5f1cb17bcc5b"
@@ -100,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           git status --porcelain > /tmp/status
-          allowed='^( M README.md| M src/postgres_mcp/server.py| M src/postgres_mcp/sql/results.py| M tests/unit/sql/test_results.py|\?\? docs/catalog.md|\?\? src/postgres_mcp/catalog_advanced.py|\?\? tests/integration/catalog/test_catalog_advanced_integration.py|\?\? tests/unit/catalog/test_catalog_advanced.py|\?\? tests/unit/server/test_catalog_tools.py| D \.github/patches/oid-catalog/(part0[0-4]|p05-0[0-3])| D \.github/workflows/apply-oid-catalog.yml)$'
+          allowed='^( M README.md| M src/postgres_mcp/server.py| M src/postgres_mcp/sql/results.py| M tests/unit/sql/test_results.py|\?\? docs/catalog.md|\?\? src/postgres_mcp/catalog_advanced.py|\?\? tests/integration/catalog/test_catalog_advanced_integration.py|\?\? tests/unit/catalog/test_catalog_advanced.py|\?\? tests/unit/server/test_catalog_tools.py| D \.github/patches/oid-catalog/.+| D \.github/workflows/apply-oid-catalog.yml)$'
           unexpected=$(grep -Ev "$allowed" /tmp/status || true)
           if [[ -n "$unexpected" ]]; then
             printf 'Unexpected changes:\n%s\n' "$unexpected" >&2
