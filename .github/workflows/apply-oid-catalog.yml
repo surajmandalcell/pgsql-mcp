@@ -47,22 +47,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected=(
-            "7e2184fee46d5290d20972faec11c04844b6c778ce852789811466c9f6cd72b5"
-            "dfc5f2561359e52c2c675952a6cd9f1e9635f06e6b5d6f9041d9b2c7c1d292bd"
-            "cfc884dd863eac574269bb28b9185685812e842bb5e70a9985d5f6b88952648c"
-            "029525dc8939360c73fa4de241c13d81ad37757ff96508cd9f747a4ce2686f75"
-            "05db7737f2d7fa5e0dd8e82d752ec3b2912612d39a9e0c73b82c59a46bbac426"
-            "1f40a12f339d8bfc3c685bde6f882b0f051b8b6f710bac96d8c4c1a0ad3593c0"
-          )
           : > /tmp/oid-catalog.patch.b64
           for index in 0 1 2 3 4 5; do
             file=$(printf '.github/patches/oid-catalog/part%02d' "$index")
             canonical=$(printf '/tmp/oid-catalog.part%02d' "$index")
             tr -d '[:space:]' < "$file" > "$canonical"
-            actual=$(sha256sum "$canonical" | cut -d' ' -f1)
-            printf 'part%02d actual=%s expected=%s\n' "$index" "$actual" "${expected[$index]}"
-            test "$actual" = "${expected[$index]}"
+            printf 'part%02d canonical-sha256=%s\n' "$index" "$(sha256sum "$canonical" | cut -d' ' -f1)"
             cat "$canonical" >> /tmp/oid-catalog.patch.b64
           done
           test "$(sha256sum /tmp/oid-catalog.patch.b64 | cut -d' ' -f1)" = "7f549138656ed419cb37960b25e03de71791c46a8cdf95bb3335f4c0382c2fab"
