@@ -51,14 +51,20 @@ jobs:
           set -euo pipefail
           : > /tmp/reviewed-migrations.patch.gz.b64
           for index in 00 01 02 03 04; do
-            cat ".github/transfer/reviewed-migrations/part${index}" >> /tmp/reviewed-migrations.patch.gz.b64
+            tr -d '[:space:]' < ".github/transfer/reviewed-migrations/part${index}" >> /tmp/reviewed-migrations.patch.gz.b64
           done
+          printf 'base64-bytes=%s\n' "$(wc -c < /tmp/reviewed-migrations.patch.gz.b64)"
+          printf 'base64-sha256=%s\n' "$(sha256sum /tmp/reviewed-migrations.patch.gz.b64 | cut -d' ' -f1)"
           test "$(wc -c < /tmp/reviewed-migrations.patch.gz.b64)" -eq 29300
           test "$(sha256sum /tmp/reviewed-migrations.patch.gz.b64 | cut -d' ' -f1)" = "5bef6c30221dea79000cd6702063c6b717d7ee242422588e1de2bf687bc6960d"
           base64 --decode /tmp/reviewed-migrations.patch.gz.b64 > /tmp/reviewed-migrations.patch.gz
+          printf 'gzip-bytes=%s\n' "$(wc -c < /tmp/reviewed-migrations.patch.gz)"
+          printf 'gzip-sha256=%s\n' "$(sha256sum /tmp/reviewed-migrations.patch.gz | cut -d' ' -f1)"
           test "$(wc -c < /tmp/reviewed-migrations.patch.gz)" -eq 21973
           test "$(sha256sum /tmp/reviewed-migrations.patch.gz | cut -d' ' -f1)" = "405f9fc26141cdd55927167e7d7adf180a660b65a824f16ff608b1f70753edf9"
           gzip --decompress --stdout /tmp/reviewed-migrations.patch.gz > /tmp/reviewed-migrations.patch
+          printf 'patch-bytes=%s\n' "$(wc -c < /tmp/reviewed-migrations.patch)"
+          printf 'patch-sha256=%s\n' "$(sha256sum /tmp/reviewed-migrations.patch | cut -d' ' -f1)"
           test "$(wc -c < /tmp/reviewed-migrations.patch)" -eq 103143
           test "$(sha256sum /tmp/reviewed-migrations.patch | cut -d' ' -f1)" = "a4b5559d37c3ec57408694fe0abeb9a52be04b58642c8dd02bf57c6271046e03"
           git apply --check /tmp/reviewed-migrations.patch
