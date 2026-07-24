@@ -19,6 +19,8 @@ from .transaction import TransactionValidationError
 from .transaction import parse_single_statement
 from .transaction import sql_for_validation
 
+MAX_SQL_CHARACTERS = 100_000
+
 _PUBLIC_READONLY_STATEMENTS = (SelectStmt, ExplainStmt, VariableShowStmt)
 _SESSION_MUTATING_FUNCTIONS = frozenset(
     {
@@ -70,7 +72,7 @@ class SafeQueryValidator(SafeSqlDriver):
 
 
 class SafeQueryExecutor:
-    """Run a single validated statement with row and time limits."""
+    """Run a single validated statement with total validation/execution limits."""
 
     def __init__(self, sql_driver: SqlDriver, *, timeout_seconds: float):
         if timeout_seconds <= 0:
@@ -78,6 +80,29 @@ class SafeQueryExecutor:
         self.sql_driver = sql_driver
         self.timeout_seconds = timeout_seconds
         self.validator = SafeQueryValidator(sql_driver=sql_driver, timeout=timeout_seconds)
+
+    @staticmethod
+    def _check_query_size(query: str) -> None:
+        if len(query) > MAX_SQL_CHARACTERS:
+            raise ValueError(f"SQL cannot exceed {MAX_SQL_CHARACTERS} characters")
+
+    async def _validate_in_worker(self, query: str, *, parameter_count: int) -> None:
+        # pglast parsing is synchronous. Offloading it keeps the event loop
+        # cancellable so the surrounding timeout covers pathological input.
+        await asyncio.to_thread(
+            self.validator.validate_query,
+            query,
+            parameter_count=parameter_count,
+        )
+
+    async def validate_query(self, query: str, *, parameter_count: int = 0) -> None:
+        """Validate a query within the same time budget used by execution."""
+        self._check_query_size(query)
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                await self._validate_in_worker(query, parameter_count=parameter_count)
+        except TimeoutError as exc:
+            raise ValueError(f"query validation timed out after {self.timeout_seconds:g} seconds") from exc
 
     async def execute_bounded_query(
         self,
@@ -87,10 +112,11 @@ class SafeQueryExecutor:
         max_rows: int,
     ) -> BoundedQueryResult:
         """Validate and execute exactly one database-enforced read-only query."""
+        self._check_query_size(query)
         parameter_count = len(params) if params is not None else 0
-        self.validator.validate_query(query, parameter_count=parameter_count)
         try:
             async with asyncio.timeout(self.timeout_seconds):
+                await self._validate_in_worker(query, parameter_count=parameter_count)
                 return await self.sql_driver.execute_bounded_query(
                     query,
                     params=params,
@@ -99,4 +125,6 @@ class SafeQueryExecutor:
                     timeout_seconds=self.timeout_seconds,
                 )
         except TimeoutError as exc:
-            raise ValueError(f"query execution timed out after {self.timeout_seconds:g} seconds") from exc
+            raise ValueError(
+                f"query validation or execution timed out after {self.timeout_seconds:g} seconds"
+            ) from exc
