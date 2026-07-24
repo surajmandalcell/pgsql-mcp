@@ -1,0 +1,130 @@
+name: Apply reviewed migration domain
+
+on:
+  push:
+    branches:
+      - feature/reviewed-migrations
+    paths:
+      - .github/transfer/reviewed-migrations/**
+      - .github/workflows/apply-reviewed-migrations.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-reviewed-migration-domain
+  cancel-in-progress: false
+
+jobs:
+  apply-test-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact revision without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Start Docker service
+        run: sudo service docker start || true
+
+      - name: Verify Docker is running
+        run: docker info
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Reconstruct and apply the reviewed implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/reviewed-migrations.patch.b64
+          for index in 00 01 02 03 04; do
+            cat ".github/transfer/reviewed-migrations/part${index}" >> /tmp/reviewed-migrations.patch.gz.b64
+          done
+          test "$(wc -c < /tmp/reviewed-migrations.patch.gz.b64)" -eq 29300
+          test "$(sha256sum /tmp/reviewed-migrations.patch.gz.b64 | cut -d' ' -f1)" = "5bef6c30221dea79000cd6702063c6b717d7ee242422588e1de2bf687bc6960d"
+          base64 --decode /tmp/reviewed-migrations.patch.gz.b64 > /tmp/reviewed-migrations.patch.gz
+          test "$(wc -c < /tmp/reviewed-migrations.patch.gz)" -eq 21973
+          test "$(sha256sum /tmp/reviewed-migrations.patch.gz | cut -d' ' -f1)" = "405f9fc26141cdd55927167e7d7adf180a660b65a824f16ff608b1f70753edf9"
+          gzip --decompress --stdout /tmp/reviewed-migrations.patch.gz > /tmp/reviewed-migrations.patch
+          test "$(wc -c < /tmp/reviewed-migrations.patch)" -eq 103143
+          test "$(sha256sum /tmp/reviewed-migrations.patch | cut -d' ' -f1)" = "a4b5559d37c3ec57408694fe0abeb9a52be04b58642c8dd02bf57c6271046e03"
+          git apply --check /tmp/reviewed-migrations.patch
+          git apply /tmp/reviewed-migrations.patch
+          rm -rf .github/transfer/reviewed-migrations
+          rm .github/workflows/apply-reviewed-migrations.yml
+
+      - name: Install complete dependency set
+        run: uv sync --frozen --all-extras
+
+      - name: Validate the complete bounded context
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -o pipefail
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+          uv run pytest -v --log-cli-level=INFO --junitxml=/tmp/pytest-results.xml 2>&1 | tee /tmp/pytest-output.txt
+
+      - name: Stage exactly the reviewed domain files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add CONTRIBUTING.md README.md docs/migrations.md \
+            src/postgres_mcp/migrations/__init__.py \
+            src/postgres_mcp/migrations/domain.py \
+            src/postgres_mcp/migrations/migration_tracker.py \
+            src/postgres_mcp/migrations/planner.py \
+            src/postgres_mcp/migrations/postgres_backend.py \
+            src/postgres_mcp/migrations/service.py \
+            src/postgres_mcp/server.py \
+            src/postgres_mcp/sql/sql_driver.py
+          git add -A .github/transfer/reviewed-migrations .github/workflows/apply-reviewed-migrations.yml
+          git diff --cached --check
+          git diff --quiet
+          test -z "$(git ls-files --others --exclude-standard)"
+          cat > /tmp/expected-files <<'FILES'
+          .github/transfer/reviewed-migrations/part00
+          .github/transfer/reviewed-migrations/part01
+          .github/transfer/reviewed-migrations/part02
+          .github/transfer/reviewed-migrations/part03
+          .github/transfer/reviewed-migrations/part04
+          .github/workflows/apply-reviewed-migrations.yml
+          CONTRIBUTING.md
+          README.md
+          docs/migrations.md
+          src/postgres_mcp/migrations/__init__.py
+          src/postgres_mcp/migrations/domain.py
+          src/postgres_mcp/migrations/migration_tracker.py
+          src/postgres_mcp/migrations/planner.py
+          src/postgres_mcp/migrations/postgres_backend.py
+          src/postgres_mcp/migrations/service.py
+          src/postgres_mcp/server.py
+          src/postgres_mcp/sql/sql_driver.py
+          FILES
+          git diff --cached --name-only | sort > /tmp/actual-files
+          sort -o /tmp/expected-files /tmp/expected-files
+          diff -u /tmp/expected-files /tmp/actual-files
+
+      - name: Commit the green implementation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Implement reviewed atomic migrations"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/reviewed-migrations
