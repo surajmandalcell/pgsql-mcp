@@ -1,0 +1,94 @@
+diff --git a/src/postgres_mcp/sql/__init__.py b/src/postgres_mcp/sql/__init__.py
+index 0a2a28b..ef890b7 100644
+--- a/src/postgres_mcp/sql/__init__.py
++++ b/src/postgres_mcp/sql/__init__.py
+@@ -24,6 +24,7 @@ from .transaction import TransactionExecutionError
+ from .transaction import TransactionExecutionResult
+ from .transaction import TransactionStep
+ from .transaction import TransactionValidationError
++from .transaction import build_begin_statement
+ from .transaction import parse_single_statement
+ from .transaction import validate_transaction_steps
+ 
+@@ -44,6 +45,7 @@ __all__ = [
+     "TransactionExecutionResult",
+     "TransactionStep",
+     "TransactionValidationError",
++    "build_begin_statement",
+     "check_extension",
+     "check_hypopg_installation_status",
+     "check_postgres_version_requirement",
+diff --git a/src/postgres_mcp/sql/sql_driver.py b/src/postgres_mcp/sql/sql_driver.py
+index 078226f..c4330bc 100644
+--- a/src/postgres_mcp/sql/sql_driver.py
++++ b/src/postgres_mcp/sql/sql_driver.py
+@@ -32,6 +32,7 @@ from .transaction import TransactionExecutionResult
+ from .transaction import TransactionStep
+ from .transaction import TransactionStepResult
+ from .transaction import ValidatedTransactionStep
++from .transaction import build_begin_statement
+ from .transaction import validate_transaction_steps
+ 
+ logger = logging.getLogger(__name__)
+@@ -418,9 +419,8 @@ class SqlDriver:
+         results: list[TransactionStepResult] = []
+         try:
+             async with connection.cursor() as control_cursor:
+-                access_clause = "READ ONLY" if read_only else "READ WRITE"
+                 transaction_started = True
+-                await control_cursor.execute(f"BEGIN ISOLATION LEVEL {isolation.sql} {access_clause}")
++                await control_cursor.execute(build_begin_statement(isolation, read_only=read_only))
+                 await control_cursor.execute(
+                     "SELECT set_config('statement_timeout', %s, true)",
+                     [f"{max(1, int(timeout_seconds * 1000))}ms"],
+diff --git a/src/postgres_mcp/sql/transaction.py b/src/postgres_mcp/sql/transaction.py
+index 1141574..98c19b4 100644
+--- a/src/postgres_mcp/sql/transaction.py
++++ b/src/postgres_mcp/sql/transaction.py
+@@ -36,6 +36,21 @@ class IsolationLevel(str, Enum):
+         return self.value.upper()
+ 
+ 
++_BEGIN_STATEMENTS: dict[tuple[IsolationLevel, bool], str] = {
++    (IsolationLevel.READ_COMMITTED, True): "BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY",
++    (IsolationLevel.READ_COMMITTED, False): "BEGIN ISOLATION LEVEL READ COMMITTED READ WRITE",
++    (IsolationLevel.REPEATABLE_READ, True): "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
++    (IsolationLevel.REPEATABLE_READ, False): "BEGIN ISOLATION LEVEL REPEATABLE READ READ WRITE",
++    (IsolationLevel.SERIALIZABLE, True): "BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY",
++    (IsolationLevel.SERIALIZABLE, False): "BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE",
++}
++
++
++def build_begin_statement(isolation: IsolationLevel, *, read_only: bool) -> str:
++    """Return an allowlisted PostgreSQL transaction-start statement."""
++    return _BEGIN_STATEMENTS[(isolation, read_only)]
++
++
+ class ResultMode(str, Enum):
+     """Controls how much data a transaction step returns."""
+ 
+diff --git a/tests/unit/sql/test_transaction.py b/tests/unit/sql/test_transaction.py
+index 429a216..f941e4a 100644
+--- a/tests/unit/sql/test_transaction.py
++++ b/tests/unit/sql/test_transaction.py
+@@ -12,6 +12,7 @@ from postgres_mcp.sql.transaction import TransactionExecutionResult
+ from postgres_mcp.sql.transaction import TransactionStep
+ from postgres_mcp.sql.transaction import TransactionStepResult
+ from postgres_mcp.sql.transaction import TransactionValidationError
++from postgres_mcp.sql.transaction import build_begin_statement
+ from postgres_mcp.sql.transaction import parse_single_statement
+ from postgres_mcp.sql.transaction import validate_transaction_steps
+ 
+@@ -35,6 +36,12 @@ def test_isolation_sql() -> None:
+     assert IsolationLevel.SERIALIZABLE.sql == "SERIALIZABLE"
+ 
+ 
++def test_begin_statement_builder_is_fully_allowlisted() -> None:
++    assert build_begin_statement(IsolationLevel.READ_COMMITTED, read_only=True) == ("BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY")
++    assert build_begin_statement(IsolationLevel.REPEATABLE_READ, read_only=False) == ("BEGIN ISOLATION LEVEL REPEATABLE READ READ WRITE")
++    assert build_begin_statement(IsolationLevel.SERIALIZABLE, read_only=True) == ("BEGIN ISOLATION LEVEL SERIALIZABLE READ ONLY")
++
++
+ @pytest.mark.parametrize("sql", ["", "   "])
+ def test_parse_rejects_empty_sql(sql: str) -> None:
+     with pytest.raises(TransactionValidationError, match="must not be empty"):
