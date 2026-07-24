@@ -1,128 +1,65 @@
-name: Apply OID catalog and type introspection
+name: Diagnose OID catalog transfer
 
 on:
   pull_request:
     branches:
       - main
     types:
-      - opened
       - synchronize
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: apply-oid-catalog-types
-  cancel-in-progress: false
+  group: diagnose-oid-catalog-transfer
+  cancel-in-progress: true
 
 jobs:
-  apply-validate-commit:
+  reconstruct:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout exact PR head without persisted credentials
+      - name: Checkout exact PR head
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.12"
-
-      - name: Start Docker service
-        run: sudo service docker start || true
-
-      - name: Verify Docker is running
-        run: docker info
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
-        with:
-          version: "0.6.9"
-
-      - name: Verify and reconstruct the exact reviewed patch
+      - name: Reconstruct payload
         shell: bash
         run: |
           set -euo pipefail
           : > /tmp/oid-catalog.patch.b64
           for index in 0 1 2 3 4; do
-            file=$(printf '.github/patches/oid-catalog/p00-%02d' "$index")
-            tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
+            tr -d '[:space:]' < "$(printf '.github/patches/oid-catalog/p00-%02d' "$index")" >> /tmp/oid-catalog.patch.b64
           done
           for suffix in a b c; do
             tr -d '[:space:]' < ".github/patches/oid-catalog/p00-05${suffix}" >> /tmp/oid-catalog.patch.b64
           done
           for index in 0 1 2 3 4 5; do
-            file=$(printf '.github/patches/oid-catalog/p01-%02d' "$index")
-            tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
+            tr -d '[:space:]' < "$(printf '.github/patches/oid-catalog/p01-%02d' "$index")" >> /tmp/oid-catalog.patch.b64
           done
           for index in 2 3 4; do
-            file=$(printf '.github/patches/oid-catalog/part%02d' "$index")
-            tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
+            tr -d '[:space:]' < "$(printf '.github/patches/oid-catalog/part%02d' "$index")" >> /tmp/oid-catalog.patch.b64
           done
           for index in 0 1 2 3; do
-            file=$(printf '.github/patches/oid-catalog/p05-%02d' "$index")
-            tr -d '[:space:]' < "$file" >> /tmp/oid-catalog.patch.b64
+            tr -d '[:space:]' < "$(printf '.github/patches/oid-catalog/p05-%02d' "$index")" >> /tmp/oid-catalog.patch.b64
           done
-          test "$(wc -c < /tmp/oid-catalog.patch.b64)" -eq 101412
-          test "$(sha256sum /tmp/oid-catalog.patch.b64 | cut -d' ' -f1)" = "7f549138656ed419cb37960b25e03de71791c46a8cdf95bb3335f4c0382c2fab"
-          base64 --decode /tmp/oid-catalog.patch.b64 > /tmp/oid-catalog.patch
-          test "$(sha256sum /tmp/oid-catalog.patch | cut -d' ' -f1)" = "7a9496805fbf9ec119f13e4cbaccb39eac68a7f6b99e3f17a1df5f1cb17bcc5b"
-          git apply --check /tmp/oid-catalog.patch
+          wc -c /tmp/oid-catalog.patch.b64
+          sha256sum /tmp/oid-catalog.patch.b64
+          base64 --decode /tmp/oid-catalog.patch.b64 > /tmp/oid-catalog.patch || true
+          wc -c /tmp/oid-catalog.patch
+          sha256sum /tmp/oid-catalog.patch
+          git apply --check /tmp/oid-catalog.patch > /tmp/git-apply.txt 2>&1 || true
 
-      - name: Apply the reviewed patch and remove transfer artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          git apply /tmp/oid-catalog.patch
-          rm -rf .github/patches/oid-catalog
-          rm .github/workflows/apply-oid-catalog.yml
-
-      - name: Install complete dependency set
-        run: uv sync --frozen --all-extras
-
-      - name: Validate formatting, types, and complete test suite
-        shell: bash
-        run: |
-          set -euo pipefail
-          uv run ruff format --check .
-          uv run ruff check .
-          uv run pyright
-          uv run pytest -v --log-cli-level=INFO
-
-      - name: Reject unexpected workspace changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          git status --porcelain > /tmp/status
-          allowed='^( M README.md| M src/postgres_mcp/server.py| M src/postgres_mcp/sql/results.py| M tests/unit/sql/test_results.py|\?\? docs/catalog.md|\?\? src/postgres_mcp/catalog_advanced.py|\?\? tests/integration/catalog/test_catalog_advanced_integration.py|\?\? tests/unit/catalog/test_catalog_advanced.py|\?\? tests/unit/server/test_catalog_tools.py| D \.github/patches/oid-catalog/.+| D \.github/workflows/apply-oid-catalog.yml)$'
-          unexpected=$(grep -Ev "$allowed" /tmp/status || true)
-          if [[ -n "$unexpected" ]]; then
-            printf 'Unexpected changes:\n%s\n' "$unexpected" >&2
-            exit 1
-          fi
-
-      - name: Commit and push the validated implementation
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md docs/catalog.md \
-            src/postgres_mcp/catalog_advanced.py \
-            src/postgres_mcp/server.py \
-            src/postgres_mcp/sql/results.py \
-            tests/integration/catalog/test_catalog_advanced_integration.py \
-            tests/unit/catalog/test_catalog_advanced.py \
-            tests/unit/server/test_catalog_tools.py \
-            tests/unit/sql/test_results.py \
-            .github/patches/oid-catalog \
-            .github/workflows/apply-oid-catalog.yml
-          git diff --cached --check
-          git commit -m "Add OID-backed catalog and type introspection"
-          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/oid-catalog-types
+      - name: Upload reconstructed transfer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: oid-catalog-current-transfer
+          path: |
+            /tmp/oid-catalog.patch.b64
+            /tmp/oid-catalog.patch
+            /tmp/git-apply.txt
+          if-no-files-found: error
+          retention-days: 1
