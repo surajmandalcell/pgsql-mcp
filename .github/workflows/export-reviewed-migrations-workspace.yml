@@ -1,4 +1,4 @@
-name: Export reviewed migration workspace
+name: Export reviewed migration git workspace
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: export-reviewed-migration-workspace
+  group: export-reviewed-migration-git-workspace
   cancel-in-progress: true
 
 jobs:
@@ -29,17 +29,17 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Package exact workspace
+      - name: Package exact git workspace
         shell: bash
         run: |
           set -euo pipefail
-          tar --exclude=.git --exclude=.venv --exclude=.pytest_cache --exclude='**/__pycache__' \
-            -czf /tmp/reviewed-migrations-workspace.tar.gz .
+          tar --exclude=.venv --exclude=.pytest_cache --exclude='**/__pycache__' \
+            -czf /tmp/reviewed-migrations-git-workspace.tar.gz .
 
-      - name: Upload exact workspace
+      - name: Upload exact git workspace
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: reviewed-migrations-workspace
-          path: /tmp/reviewed-migrations-workspace.tar.gz
+          name: reviewed-migrations-git-workspace
+          path: /tmp/reviewed-migrations-git-workspace.tar.gz
           if-no-files-found: error
           retention-days: 1
