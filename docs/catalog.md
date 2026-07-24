@@ -2,6 +2,12 @@
 
 The full `pgsql-mcp` profile reads PostgreSQL's live system catalogs rather than maintaining a static list of object or data types. This is important for domains, composite types, ranges, multiranges, arrays, extension-owned types, and future server versions whose OIDs are assigned by PostgreSQL.
 
+## Domain boundary
+
+Catalog discovery is a read-only bounded context. It owns PostgreSQL object identity, OID relationships, capability discovery, and descriptive metadata. It does not own query execution, schema mutation, migrations, maintenance, or authorization changes. Those capabilities use separate services and policies so catalog reads cannot become an implicit administrative surface.
+
+The domain treats PostgreSQL's catalogs as its source of truth and returns plain, stable payloads at the MCP boundary. Tests cover both domain contracts and the PostgreSQL 15/16 catalog behavior that implements them.
+
 ## Catalog tools
 
 | Tool | Purpose |
