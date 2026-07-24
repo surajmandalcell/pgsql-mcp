@@ -48,25 +48,15 @@ jobs:
 
           path = Path("tests/integration/dta/test_dta_calc_integration.py")
           content = path.read_text()
-          old = '''        # Check that low improvement columns are not recommended
-          low_improvement_recommendations = 0
-          for rec in session_with_threshold.recommendations:
-              if any(col in rec.columns for col in low_improvement_columns):
-                  low_improvement_recommendations += 1
-                  logger.info(f"Found unexpected low improvement recommendation: {rec.table}.{rec.columns}")
-          '''
-          new = '''        # A B-tree can serve the low-benefit predicate only when that column is
-          # first. Composite indexes led by a high-benefit column must not be
-          # misclassified merely because the low-benefit column is included later.
-          low_improvement_recommendations = 0
-          for rec in session_with_threshold.recommendations:
-              if rec.columns and rec.columns[0] in low_improvement_columns:
-                  low_improvement_recommendations += 1
-                  logger.info(f"Found unexpected low improvement recommendation: {rec.table}.{rec.columns}")
-          '''
-          if content.count(old) != 1:
-              raise RuntimeError("Expected exactly one DTA assertion block")
-          path.write_text(content.replace(old, new, 1))
+          old_comment = "        # Check that low improvement columns are not recommended\n"
+          new_comment = "        # A B-tree serves this predicate only when the low-benefit column leads the index.\n"
+          old_condition = "            if any(col in rec.columns for col in low_improvement_columns):"
+          new_condition = "            if rec.columns and rec.columns[0] in low_improvement_columns:"
+          if content.count(old_comment) != 1 or content.count(old_condition) != 1:
+              raise RuntimeError("Expected exactly one DTA assertion target")
+          content = content.replace(old_comment, new_comment, 1)
+          content = content.replace(old_condition, new_condition, 1)
+          path.write_text(content)
           PY
           rm .github/workflows/pr8-stabilize-dta.yml
 
