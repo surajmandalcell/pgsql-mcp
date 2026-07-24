@@ -150,9 +150,9 @@ def sql_for_validation(sql: str, *, parameter_count: int | None = None) -> str:
         current = sql[index]
         following = sql[index + 1] if index + 1 < len(sql) else ""
 
-        if state == "single_quote":
+        if state in {"single_quote", "escape_single_quote"}:
             output.append(current)
-            if current == "\\" and following:
+            if state == "escape_single_quote" and current == "\\" and following:
                 output.append(following)
                 index += 2
                 continue
@@ -212,6 +212,12 @@ def sql_for_validation(sql: str, *, parameter_count: int | None = None) -> str:
                 index += 1
             continue
 
+        previous = sql[index - 1] if index > 0 else ""
+        if current in {"E", "e"} and following == "'" and not (previous.isalnum() or previous in {"_", "$"}):
+            output.extend((current, following))
+            state = "escape_single_quote"
+            index += 2
+            continue
         if current == "'":
             output.append(current)
             state = "single_quote"
@@ -259,7 +265,7 @@ def sql_for_validation(sql: str, *, parameter_count: int | None = None) -> str:
         output.append(current)
         index += 1
 
-    if state in {"single_quote", "double_quote", "block_comment", "dollar_quote"}:
+    if state in {"single_quote", "escape_single_quote", "double_quote", "block_comment", "dollar_quote"}:
         # pglast would reject these as well, but this gives a deterministic error
         # before placeholder-count validation can obscure the syntax failure.
         raise TransactionValidationError("unterminated quoted SQL region")

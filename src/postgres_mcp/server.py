@@ -45,7 +45,6 @@ from .sql import TransactionValidationError  # noqa: E402
 from .sql import check_hypopg_installation_status  # noqa: E402
 from .sql import json_text  # noqa: E402
 from .sql import obfuscate_password  # noqa: E402
-from .sql import parse_single_statement  # noqa: E402
 from .transport import DEFAULT_SSE_HOST as DEFAULT_SSE_HOST  # noqa: E402
 from .transport import DEFAULT_SSE_PATH as DEFAULT_SSE_PATH  # noqa: E402
 from .transport import DEFAULT_SSE_PORT as DEFAULT_SSE_PORT  # noqa: E402
@@ -205,10 +204,10 @@ async def explain_query(
         return format_error_response("EXPLAIN ANALYZE is disabled in restricted mode because it executes the statement")
     try:
         sql_driver = await get_sql_driver()
-        SafeQueryExecutor(
+        await SafeQueryExecutor(
             get_base_sql_driver(),
             timeout_seconds=current_query_timeout,
-        ).validator.validate_query(sql, parameter_count=0)
+        ).validate_query(sql, parameter_count=0)
         explain_tool = ExplainPlanTool(sql_driver=sql_driver)
         result: ExplainPlanArtifact | ErrorResult | None
         if hypothetical_indexes:
@@ -253,7 +252,6 @@ async def execute_sql(
         )
         limits.validate()
         row_limit = limits.checked_row_limit(max_rows)
-        parse_single_statement(sql, parameter_count=len(params) if params is not None else 0)
         result = await SafeQueryExecutor(
             get_base_sql_driver(),
             timeout_seconds=current_query_timeout,
