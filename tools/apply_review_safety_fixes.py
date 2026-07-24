@@ -13,7 +13,7 @@ def replace_once(path: str, old: str, new: str) -> None:
 
 replace_once(
     "src/postgres_mcp/sql/transaction.py",
-    '''        if state == "single_quote":
+    """        if state == "single_quote":
             output.append(current)
             if current == "\\\\" and following:
                 output.append(following)
@@ -27,8 +27,8 @@ replace_once(
                 state = "normal"
             index += 1
             continue
-''',
-    '''        if state in {"single_quote", "escape_single_quote"}:
+""",
+    """        if state in {"single_quote", "escape_single_quote"}:
             output.append(current)
             if state == "escape_single_quote" and current == "\\\\" and following:
                 output.append(following)
@@ -42,18 +42,18 @@ replace_once(
                 state = "normal"
             index += 1
             continue
-''',
+""",
 )
 
 replace_once(
     "src/postgres_mcp/sql/transaction.py",
-    '''        if current == "'":
+    """        if current == "'":
             output.append(current)
             state = "single_quote"
             index += 1
             continue
-''',
-    '''        previous = sql[index - 1] if index > 0 else ""
+""",
+    """        previous = sql[index - 1] if index > 0 else ""
         if (
             current in {"E", "e"}
             and following == "'"
@@ -68,42 +68,42 @@ replace_once(
             state = "single_quote"
             index += 1
             continue
-''',
+""",
 )
 
 replace_once(
     "src/postgres_mcp/sql/transaction.py",
-    '''    if state in {"single_quote", "double_quote", "block_comment", "dollar_quote"}:
-''',
-    '''    if state in {"single_quote", "escape_single_quote", "double_quote", "block_comment", "dollar_quote"}:
-''',
+    """    if state in {"single_quote", "double_quote", "block_comment", "dollar_quote"}:
+""",
+    """    if state in {"single_quote", "escape_single_quote", "double_quote", "block_comment", "dollar_quote"}:
+""",
 )
 
 replace_once(
     "src/postgres_mcp/server.py",
-    '''from .sql import parse_single_statement  # noqa: E402
-''',
+    """from .sql import parse_single_statement  # noqa: E402
+""",
     "",
 )
 
 replace_once(
     "src/postgres_mcp/server.py",
-    '''        SafeQueryExecutor(
+    """        SafeQueryExecutor(
             get_base_sql_driver(),
             timeout_seconds=current_query_timeout,
         ).validator.validate_query(sql, parameter_count=0)
-''',
-    '''        await SafeQueryExecutor(
+""",
+    """        await SafeQueryExecutor(
             get_base_sql_driver(),
             timeout_seconds=current_query_timeout,
         ).validate_query(sql, parameter_count=0)
-''',
+""",
 )
 
 replace_once(
     "src/postgres_mcp/server.py",
-    '''        parse_single_statement(sql, parameter_count=len(params) if params is not None else 0)
-''',
+    """        parse_single_statement(sql, parameter_count=len(params) if params is not None else 0)
+""",
     "",
 )
 
