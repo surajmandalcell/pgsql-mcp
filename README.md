@@ -187,6 +187,12 @@ Install extensions through a controlled migration or administrator workflow. Res
 | `list_schemas` | List database schemas |
 | `list_objects` | List tables, views, sequences, or extensions |
 | `get_object_details` | Inspect columns, constraints, indexes, and comments |
+| `get_server_info` | Report PostgreSQL version, role, recovery, locale, and extensions |
+| `search_catalog` | Search relations, routines, types, collations, and extensions |
+| `list_relations` | List every PostgreSQL relation class with storage and RLS metadata |
+| `get_relation_details` | Inspect columns, OIDs, constraints, indexes, triggers, policies, partitions, and grants |
+| `list_postgres_types` | List built-in, user-defined, and extension-owned types by OID |
+| `get_postgres_type` | Resolve enum, domain, composite, range, multirange, array, and unknown types |
 | `execute_sql` | Execute one bounded, parameterized, read-only statement in every mode |
 | `execute_transaction` | Execute guarded steps atomically; unrestricted mode only |
 | `explain_query` | Inspect a validated read-only plan; `ANALYZE` is blocked in restricted mode |
@@ -205,7 +211,7 @@ uv run pyright
 uv run pytest -v
 ```
 
-Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md).
+Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), and the live OID-backed object model is documented in [docs/catalog.md](docs/catalog.md).
 
 ## License
 
