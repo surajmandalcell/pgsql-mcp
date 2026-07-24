@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          : > /tmp/reviewed-migrations.patch.b64
+          : > /tmp/reviewed-migrations.patch.gz.b64
           for index in 00 01 02 03 04; do
             cat ".github/transfer/reviewed-migrations/part${index}" >> /tmp/reviewed-migrations.patch.gz.b64
           done
