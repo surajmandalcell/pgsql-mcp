@@ -68,7 +68,7 @@ class SafeQueryValidator(SafeSqlDriver):
                 f"statement type '{statement_name}' is not allowed in public read-only queries"
             )
         _reject_session_mutation(statement)
-        self._validate(validation_query)
+        self._validate(validation_query)  # pyright: ignore[reportPrivateUsage]
 
 
 class SafeQueryExecutor:
