@@ -17,24 +17,24 @@ def replace_once(path: str, old: str, new: str) -> None:
 
 replace_once(
     "src/postgres_mcp/sql/results.py",
-    '''                "lower": encode_postgres_value(value.lower),
+    """                "lower": encode_postgres_value(value.lower),
                 "upper": encode_postgres_value(value.upper),
                 "bounds": value.bounds,
                 "empty": bool(value.isempty),
-''',
-    '''                "lower": encode_postgres_value(getattr(value, "lower")),
+""",
+    """                "lower": encode_postgres_value(getattr(value, "lower")),
                 "upper": encode_postgres_value(getattr(value, "upper")),
                 "bounds": getattr(value, "bounds"),
                 "empty": bool(getattr(value, "isempty")),
-''',
+""",
 )
 
 replace_once(
     "src/postgres_mcp/sql/sql_driver.py",
-    '''    @property
+    """    @property
     def is_valid(self) -> bool:
         return self._is_valid
-''',
+""",
     '''    def mark_invalid(self, error: BaseException) -> None:
         """Record a connection-level failure without exposing mutable internals."""
         self._is_valid = False
@@ -47,48 +47,48 @@ replace_once(
 )
 replace_once(
     "src/postgres_mcp/sql/sql_driver.py",
-    '''        if self.conn is not None and self.is_pool:
+    """        if self.conn is not None and self.is_pool:
             self.conn._is_valid = False
             self.conn._last_error = str(root_error)
         elif self.conn is not None:
-''',
-    '''        if self.conn is not None and self.is_pool:
+""",
+    """        if self.conn is not None and self.is_pool:
             self.conn.mark_invalid(root_error)
         elif self.conn is not None:
-''',
+""",
 )
 
 replace_once(
     "src/postgres_mcp/server.py",
-    '''from .sql import parse_single_statement  # noqa: E402
+    """from .sql import parse_single_statement  # noqa: E402
 from .transport import env_number  # noqa: E402
-''',
-    '''from .sql import parse_single_statement  # noqa: E402
+""",
+    """from .sql import parse_single_statement  # noqa: E402
 from .transport import DEFAULT_SSE_HOST as DEFAULT_SSE_HOST  # noqa: E402
 from .transport import DEFAULT_SSE_PATH as DEFAULT_SSE_PATH  # noqa: E402
 from .transport import DEFAULT_SSE_PORT as DEFAULT_SSE_PORT  # noqa: E402
 from .transport import env_number  # noqa: E402
-''',
+""",
 )
 
 replace_once(
     "tests/unit/server/test_safety_foundation.py",
-    '''import pytest
+    """import pytest
 
 import postgres_mcp.server as server
-''',
-    '''import pytest
+""",
+    """import pytest
 from mcp.types import TextContent
 
 import postgres_mcp.server as server
-''',
+""",
 )
 replace_once(
     "tests/unit/server/test_safety_foundation.py",
-    '''def response_payload(response: server.ResponseType) -> object:
+    """def response_payload(response: server.ResponseType) -> object:
     return json.loads(response[0].text)
-''',
-    '''def response_text(response: server.ResponseType) -> str:
+""",
+    """def response_text(response: server.ResponseType) -> str:
     content = response[0]
     assert isinstance(content, TextContent)
     return content.text
@@ -96,7 +96,7 @@ replace_once(
 
 def response_payload(response: server.ResponseType) -> object:
     return json.loads(response_text(response))
-''',
+""",
 )
 
 safety_test = Path("tests/unit/server/test_safety_foundation.py")
