@@ -12,6 +12,8 @@ Reviewed migrations are a separate bounded context from raw SQL execution. The p
 
 Planning and status are available in restricted mode. Apply and rollback require `--access-mode=unrestricted` and a database role with only the DDL permissions the reviewed plan needs.
 
+Each apply or rollback request is a single bounded operation. The server does not expose long-lived migration transaction handles, so a client disconnect cannot leave a deliberately pinned migration session waiting for a later command.
+
 ## Domain invariants
 
 - A plan contains one to 100 steps.
