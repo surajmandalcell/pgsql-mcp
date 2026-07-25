@@ -118,7 +118,7 @@ async def catalog_driver(test_postgres_connection_string: tuple[str, str]) -> As
 async def test_server_info_and_catalog_search(catalog_driver: SqlDriver) -> None:
     server = await get_server_info_data(catalog_driver)
     assert server["database"]
-    assert server["server_version_num"] >= 150000
+    assert server["server_version_num"] >= 140000
     assert server["current_user"]
     assert isinstance(server["extensions"], list)
 

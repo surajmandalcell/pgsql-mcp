@@ -1,8 +1,9 @@
 import asyncio
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 from dotenv import load_dotenv
+from utils import configured_postgres_images
 from utils import create_postgres_container
 
 from postgres_mcp.sql import reset_postgres_version_cache
@@ -17,7 +18,7 @@ def event_loop_policy():
     return asyncio.DefaultEventLoopPolicy()
 
 
-@pytest.fixture(scope="class", params=["postgres:15", "postgres:16"])
+@pytest.fixture(scope="class", params=configured_postgres_images())
 def test_postgres_connection_string(request) -> Generator[tuple[str, str], None, None]:
     yield from create_postgres_container(request.param)
 

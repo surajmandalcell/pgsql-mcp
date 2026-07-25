@@ -1,4 +1,4 @@
-"""Real PostgreSQL 15/16 contracts for reviewed atomic migrations."""
+"""Supported-PostgreSQL contracts for reviewed atomic migrations."""
 
 from __future__ import annotations
 
