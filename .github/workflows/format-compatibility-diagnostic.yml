@@ -1,0 +1,65 @@
+name: Format compatibility diagnostic
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: format-compatibility-diagnostic
+  cancel-in-progress: true
+
+jobs:
+  format:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Normalize and capture diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run ruff format . 2>&1 | tee /tmp/ruff-format.txt
+          uv run ruff check --fix . 2>&1 | tee /tmp/ruff-lint-fix.txt || true
+          uv run ruff format --check . 2>&1 | tee /tmp/ruff-format-check.txt
+          uv run ruff check . 2>&1 | tee /tmp/ruff-lint-check.txt
+          tar --exclude=.git --exclude=.venv --exclude=.pytest_cache --exclude='**/__pycache__' \
+            -czf /tmp/ruff-normalized-workspace.tar.gz .
+
+      - name: Upload normalized workspace
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: compatibility-ruff-normalized
+          path: |
+            /tmp/ruff-format.txt
+            /tmp/ruff-lint-fix.txt
+            /tmp/ruff-format-check.txt
+            /tmp/ruff-lint-check.txt
+            /tmp/ruff-normalized-workspace.tar.gz
+          if-no-files-found: error
+          retention-days: 1
