@@ -16,6 +16,7 @@ MAX_IDENTIFIER_BYTES = 63
 MAX_MAINTENANCE_NAME_CHARACTERS = 200
 _REVIEW_DOMAIN = b"pgsql-mcp:reviewed-maintenance:v1\0"
 _ALLOWED_INDEX_CLEANUP = frozenset({"auto", "on", "off"})
+_ALLOWED_PERSISTENCE = frozenset({"p", "u", "t"})
 
 
 class MaintenanceError(Exception):
@@ -194,15 +195,26 @@ class TargetSnapshot:
 
     oid: int
     relation_kind: str
+    persistence: str
     is_partition: bool
+    is_populated: bool
     has_usable_unique_index: bool
+    is_exclusion_index: bool
 
     def __post_init__(self) -> None:
         if not isinstance(self.oid, int) or isinstance(self.oid, bool) or self.oid <= 0:
             raise MaintenanceValidationError("target OID must be a positive integer")
         if not isinstance(self.relation_kind, str) or len(self.relation_kind) != 1:
             raise MaintenanceValidationError("target relation kind must be one PostgreSQL relkind")
-        if not isinstance(self.is_partition, bool) or not isinstance(self.has_usable_unique_index, bool):
+        if self.persistence not in _ALLOWED_PERSISTENCE:
+            raise MaintenanceValidationError("target persistence must be p, u, or t")
+        flags = (
+            self.is_partition,
+            self.is_populated,
+            self.has_usable_unique_index,
+            self.is_exclusion_index,
+        )
+        if any(not isinstance(flag, bool) for flag in flags):
             raise MaintenanceValidationError("target snapshot flags must be boolean")
 
 
@@ -216,6 +228,7 @@ class MaintenancePlan:
     options: MaintenanceOptions
     target_oid: int
     target_kind: str
+    target_persistence: str
     is_partition: bool
     preconditions: Mapping[str, Any]
     warnings: tuple[str, ...]
@@ -234,6 +247,8 @@ class MaintenancePlan:
             raise MaintenanceValidationError("target OID must be a positive integer")
         if not isinstance(self.target_kind, str) or len(self.target_kind) != 1:
             raise MaintenanceValidationError("target kind must be one PostgreSQL relkind")
+        if self.target_persistence not in _ALLOWED_PERSISTENCE:
+            raise MaintenanceValidationError("target persistence must be p, u, or t")
         if self.transaction_behavior != "non_transactional":
             raise MaintenanceValidationError("reviewed maintenance must be classified as non_transactional")
         object.__setattr__(self, "preconditions", MappingProxyType(dict(self.preconditions)))
@@ -252,6 +267,7 @@ class MaintenancePlan:
                 "name": self.target.name,
                 "oid": self.target_oid,
                 "kind": self.target_kind,
+                "persistence": self.target_persistence,
                 "is_partition": self.is_partition,
             },
             "options": self.options.to_payload(),
@@ -306,6 +322,7 @@ class MaintenancePlan:
                 ),
                 target_oid=int(target_payload["oid"]),
                 target_kind=str(target_payload["kind"]),
+                target_persistence=str(target_payload["persistence"]),
                 is_partition=target_payload["is_partition"],
                 preconditions=payload["preconditions"],
                 warnings=tuple(payload["warnings"]),
@@ -391,6 +408,8 @@ class MaintenancePlanner:
             raise MaintenanceValidationError("request must be MaintenanceRequest")
         if not isinstance(snapshot, TargetSnapshot):
             raise MaintenanceValidationError("snapshot must be TargetSnapshot")
+        if snapshot.persistence == "t":
+            raise MaintenanceValidationError("temporary maintenance targets are not supported")
 
         operation = request.operation
         kind = snapshot.relation_kind
@@ -405,18 +424,24 @@ class MaintenancePlanner:
         elif operation is MaintenanceOperation.REINDEX_INDEX_CONCURRENTLY:
             if kind not in {"i", "I"}:
                 raise MaintenanceValidationError("concurrent reindex requires an index target")
+            if snapshot.is_exclusion_index:
+                raise MaintenanceValidationError("exclusion indexes cannot be reindexed concurrently")
             if not request.options.is_default:
                 raise MaintenanceValidationError("maintenance options are only supported for VACUUM ANALYZE or ANALYZE")
         elif operation is MaintenanceOperation.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY:
             if kind != "m":
                 raise MaintenanceValidationError("concurrent refresh requires a materialized view target")
+            if not snapshot.is_populated:
+                raise MaintenanceValidationError("concurrent refresh requires a populated materialized view")
             if not snapshot.has_usable_unique_index:
                 raise MaintenanceValidationError("concurrent refresh requires a usable all-row unique index")
             if not request.options.is_default:
                 raise MaintenanceValidationError("maintenance options are only supported for VACUUM ANALYZE or ANALYZE")
 
         preconditions = {
+            "is_populated": snapshot.is_populated,
             "has_usable_unique_index": snapshot.has_usable_unique_index,
+            "is_exclusion_index": snapshot.is_exclusion_index,
         }
         warnings = (
             "cannot_roll_back",
@@ -430,6 +455,7 @@ class MaintenancePlanner:
             options=request.options,
             target_oid=snapshot.oid,
             target_kind=kind,
+            target_persistence=snapshot.persistence,
             is_partition=snapshot.is_partition,
             preconditions=preconditions,
             warnings=warnings,
@@ -443,6 +469,7 @@ class MaintenancePlanner:
             options=provisional.options,
             target_oid=provisional.target_oid,
             target_kind=provisional.target_kind,
+            target_persistence=provisional.target_persistence,
             is_partition=provisional.is_partition,
             preconditions=provisional.preconditions,
             warnings=provisional.warnings,
