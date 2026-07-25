@@ -3,6 +3,7 @@ import os
 import time
 from pathlib import Path
 from typing import Generator
+from typing import Mapping
 from typing import Tuple
 
 import docker
@@ -10,6 +11,24 @@ import pytest
 from docker import errors as docker_errors
 
 logger = logging.getLogger(__name__)
+
+POSTGRES_IMAGE_ENV = "PGSQL_MCP_TEST_POSTGRES_IMAGE"
+SUPPORTED_POSTGRES_IMAGES = tuple(f"postgres:{major}" for major in range(14, 19))
+DEFAULT_POSTGRES_IMAGES = ("postgres:15", "postgres:16")
+
+
+def configured_postgres_images(environment: Mapping[str, str] | None = None) -> tuple[str, ...]:
+    """Return the validated PostgreSQL image selection for integration tests."""
+    source = os.environ if environment is None else environment
+    configured = source.get(POSTGRES_IMAGE_ENV)
+    if configured is None or not configured.strip():
+        return DEFAULT_POSTGRES_IMAGES
+
+    image = configured.strip()
+    if image not in SUPPORTED_POSTGRES_IMAGES:
+        choices = ", ".join(SUPPORTED_POSTGRES_IMAGES)
+        raise RuntimeError(f"{POSTGRES_IMAGE_ENV} must be one of: {choices}")
+    return (image,)
 
 
 def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, None]:
@@ -37,7 +56,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
         client.images.get(custom_image_name)
         logger.info(f"Using existing Docker image: {custom_image_name}")
     except docker_errors.ImageNotFound:
-        # Build the custom image
+        # Build the image
         logger.info(f"Building custom Docker image: {custom_image_name}")
         try:
             dockerfile_path = current_dir / "Dockerfile.postgres-hypopg"
