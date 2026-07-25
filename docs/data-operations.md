@@ -32,7 +32,7 @@ The lite profile intentionally omits this bounded context. That exclusion is str
 
 Each call checks out one connection and opens one transaction. Reads use `REPEATABLE READ READ ONLY`; mutations use `SERIALIZABLE READ WRITE`. The adapter applies transaction-local statement, lock, and idle-transaction timeouts, enables row security, restricts the search path to `pg_catalog`, and assigns an operation-specific application name.
 
-Expected validation and conflict failures preserve their domain error. Database errors are redacted after rollback. A connection loss during `COMMIT` is reported as an unknown commit state and must be reconciled before retrying.
+Expected validation and conflict failures preserve their domain error. Database errors are redacted after rollback. A connection loss during `COMMIT` is reported as an unknown commit state and must be reconciled before retrying. The adapter never retries a mutation automatically because retry safety depends on caller-owned idempotency and business semantics.
 
 ## Permissions and row-level security
 
