@@ -19,10 +19,13 @@ from .domain import MaintenanceTarget
 from .domain import MaintenanceValidationError
 from .domain import ReconciliationResolution
 from .domain import TargetSnapshot
+from .postgres import LEDGER_TABLE_NAME
+from .postgres import PostgresMaintenanceBackend
 from .service import MaintenanceBackend
 from .service import MaintenanceService
 
 __all__ = [
+    "LEDGER_TABLE_NAME",
     "PLAN_VERSION",
     "MaintenanceBackend",
     "MaintenanceBusyError",
@@ -42,6 +45,7 @@ __all__ = [
     "MaintenanceStatusSnapshot",
     "MaintenanceTarget",
     "MaintenanceValidationError",
+    "PostgresMaintenanceBackend",
     "ReconciliationResolution",
     "TargetSnapshot",
 ]
