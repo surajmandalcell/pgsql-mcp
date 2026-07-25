@@ -19,12 +19,22 @@ def target(name: str = "items") -> MaintenanceTarget:
     return MaintenanceTarget(schema="app", name=name)
 
 
-def snapshot(*, kind: str = "r", unique_index: bool = False) -> TargetSnapshot:
+def snapshot(
+    *,
+    kind: str = "r",
+    unique_index: bool = False,
+    populated: bool = True,
+    exclusion_index: bool = False,
+    persistence: str = "p",
+) -> TargetSnapshot:
     return TargetSnapshot(
         oid=42,
         relation_kind=kind,
+        persistence=persistence,
         is_partition=False,
+        is_populated=populated,
         has_usable_unique_index=unique_index,
+        is_exclusion_index=exclusion_index,
     )
 
 
@@ -101,7 +111,12 @@ def test_analyze_allows_foreign_tables_but_vacuum_does_not() -> None:
         MaintenancePlanner().create_plan(request(), snapshot(kind="f"))
 
 
-def test_reindex_requires_an_index_target() -> None:
+def test_temporary_targets_are_refused() -> None:
+    with pytest.raises(MaintenanceValidationError, match="temporary"):
+        MaintenancePlanner().create_plan(request(), snapshot(persistence="t"))
+
+
+def test_reindex_requires_nonexclusion_index_target() -> None:
     plan = MaintenancePlanner().create_plan(
         request(MaintenanceOperation.REINDEX_INDEX_CONCURRENTLY),
         snapshot(kind="i"),
@@ -113,14 +128,20 @@ def test_reindex_requires_an_index_target() -> None:
             request(MaintenanceOperation.REINDEX_INDEX_CONCURRENTLY),
             snapshot(kind="r"),
         )
+    with pytest.raises(MaintenanceValidationError, match="exclusion"):
+        MaintenancePlanner().create_plan(
+            request(MaintenanceOperation.REINDEX_INDEX_CONCURRENTLY),
+            snapshot(kind="i", exclusion_index=True),
+        )
 
 
-def test_concurrent_refresh_requires_materialized_view_and_usable_unique_index() -> None:
+def test_concurrent_refresh_requires_populated_view_and_usable_unique_index() -> None:
     plan = MaintenancePlanner().create_plan(
         request(MaintenanceOperation.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY),
         snapshot(kind="m", unique_index=True),
     )
     assert plan.preconditions["has_usable_unique_index"] is True
+    assert plan.preconditions["is_populated"] is True
 
     with pytest.raises(MaintenanceValidationError, match="materialized view"):
         MaintenancePlanner().create_plan(
@@ -132,11 +153,23 @@ def test_concurrent_refresh_requires_materialized_view_and_usable_unique_index()
             request(MaintenanceOperation.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY),
             snapshot(kind="m", unique_index=False),
         )
+    with pytest.raises(MaintenanceValidationError, match="populated"):
+        MaintenancePlanner().create_plan(
+            request(MaintenanceOperation.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY),
+            snapshot(kind="m", unique_index=True, populated=False),
+        )
 
 
 def test_plan_payload_contains_no_raw_sql_escape_hatch() -> None:
     payload = MaintenancePlanner().create_plan(request(), snapshot()).to_payload()
 
     assert payload["operation"] == "vacuum_analyze"
-    assert payload["target"] == {"schema": "app", "name": "items", "oid": 42, "kind": "r"}
+    assert payload["target"] == {
+        "schema": "app",
+        "name": "items",
+        "oid": 42,
+        "kind": "r",
+        "persistence": "p",
+        "is_partition": False,
+    }
     assert "sql" not in str(payload).lower()
