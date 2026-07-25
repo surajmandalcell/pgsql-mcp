@@ -17,7 +17,7 @@ jobs:
   format:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout exact PR head
@@ -40,14 +40,26 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
-      - name: Normalize and capture
+      - name: Normalize and capture diagnostics
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
+          set -o pipefail
           uv run ruff format . 2>&1 | tee /tmp/ruff-format.txt
-          uv run ruff check --fix . 2>&1 | tee /tmp/ruff-fix.txt || true
+          uv run ruff check --fix . 2>&1 | tee /tmp/ruff-fix.txt
           uv run ruff format --check . 2>&1 | tee /tmp/ruff-format-check.txt
           uv run ruff check . 2>&1 | tee /tmp/ruff-check.txt
+          uv run pyright 2>&1 | tee /tmp/pyright.txt
+          pyright_status=${PIPESTATUS[0]}
+          uv run pytest -q \
+            tests/unit/sql/test_safety_kernel_edges.py \
+            tests/unit/migrations/test_migration_service_defaults.py \
+            tests/unit/migrations/test_migration_domain_edges.py \
+            tests/unit/migrations/test_migration_policy_edges.py \
+            tests/unit/migrations/test_postgres_backend_edges.py \
+            2>&1 | tee /tmp/focused-pytest.txt
+          pytest_status=${PIPESTATUS[0]}
+          printf 'pyright=%s\npytest=%s\n' "$pyright_status" "$pytest_status" | tee /tmp/status.txt
           tar --exclude=.git --exclude=.venv --exclude=.pytest_cache --exclude='**/__pycache__' \
             -czf /tmp/normalized-workspace.tar.gz .
 
@@ -60,6 +72,9 @@ jobs:
             /tmp/ruff-fix.txt
             /tmp/ruff-format-check.txt
             /tmp/ruff-check.txt
+            /tmp/pyright.txt
+            /tmp/focused-pytest.txt
+            /tmp/status.txt
             /tmp/normalized-workspace.tar.gz
           if-no-files-found: error
           retention-days: 1
