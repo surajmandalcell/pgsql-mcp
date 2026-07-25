@@ -19,6 +19,7 @@ Database credentials remain the final security boundary. Use a dedicated least-p
 - **Bounded SQL** — single-statement execution, native parameters, hard row limits, explicit truncation metadata, and precision-safe JSON encoding.
 - **Guarded transactions** — atomic multi-step transactions with isolation controls, timeouts, required mutation ceilings, optional exact row-count checks, and rollback-on-failure guarantees.
 - **Reviewed migrations** — deterministic plan hashes, conservative DDL classification, atomic schema/ledger commits, and latest-only rollback.
+- **Typed data operations** — structured filters, keyset pagination, live catalog validation, and rollback-enforced mutation ceilings.
 - **Query plans** — inspect `EXPLAIN` plans and simulate hypothetical indexes with HypoPG.
 - **Index tuning** — analyze individual queries or a `pg_stat_statements` workload.
 - **Database health** — inspect index, connection, vacuum, sequence, replication, buffer, and constraint health.
@@ -197,6 +198,11 @@ Install extensions through a controlled migration or administrator workflow. Res
 | `get_postgres_type` | Resolve enum, domain, composite, range, multirange, array, and unknown types |
 | `execute_sql` | Execute one bounded, parameterized, read-only statement in every mode |
 | `execute_transaction` | Execute guarded steps atomically; unrestricted mode only |
+| `select_rows` | Read a bounded, byte-limited page through structured filters and stable keyset pagination |
+| `insert_rows` | Insert a bounded typed batch with affected-row commit guards |
+| `upsert_rows` | Upsert through a verified primary or non-partial unique key |
+| `update_rows` | Update filtered rows with optimistic predicates and commit guards |
+| `delete_rows` | Delete filtered rows with optimistic predicates and commit guards |
 | `create_migration_plan` | Parse, classify, and hash ordered forward/rollback DDL without a database connection |
 | `apply_migration_plan` | Verify and atomically commit a reviewed transactional plan and ledger row |
 | `get_migration_status` | Return redacted trusted-ledger metadata |
@@ -217,7 +223,7 @@ uv run pyright
 uv run pytest -v
 ```
 
-Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), and the live OID-backed object model is documented in [docs/catalog.md](docs/catalog.md). Reviewed migration invariants are documented in [docs/migrations.md](docs/migrations.md).
+Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), the live OID-backed object model in [docs/catalog.md](docs/catalog.md), reviewed migrations in [docs/migrations.md](docs/migrations.md), and structured CRUD in [docs/data-operations.md](docs/data-operations.md).
 
 ## License
 
