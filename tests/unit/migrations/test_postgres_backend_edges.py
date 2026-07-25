@@ -11,9 +11,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from postgres_mcp.migrations import postgres_backend
 from postgres_mcp.migrations.domain import MigrationConflictError
 from postgres_mcp.migrations.domain import MigrationExecutionError
 from postgres_mcp.migrations.domain import MigrationOperationStatus
+from postgres_mcp.migrations.domain import MigrationPlan
 from postgres_mcp.migrations.domain import MigrationReviewMismatch
 from postgres_mcp.migrations.domain import MigrationStepDraft
 from postgres_mcp.migrations.planner import MigrationPlanner
@@ -71,7 +73,7 @@ class FakeDriver:
         yield self._connection
 
 
-def plan():
+def plan() -> MigrationPlan:
     return MigrationPlanner().create_plan(
         name="edge-migration",
         steps=[MigrationStepDraft("CREATE TABLE app.items(id integer)", "DROP TABLE app.items")],
@@ -116,7 +118,7 @@ def columns() -> list[dict[str, Any]]:
     ]
 
 
-def row(reviewed_plan, *, migration_id: int = 7) -> dict[str, Any]:
+def row(reviewed_plan: MigrationPlan, *, migration_id: int = 7) -> dict[str, Any]:
     return {
         "migration_id": migration_id,
         "latest_migration_id": migration_id,
@@ -328,9 +330,12 @@ async def test_ledger_helpers_cover_mapping_and_empty_results() -> None:
     assert await adapter._ledger_exists(  # pyright: ignore[reportPrivateUsage]
         FakeConnection([FakeCursor(one={"exists": True})])
     )
-    assert await adapter._next_batch(  # pyright: ignore[reportPrivateUsage]
-        FakeConnection([FakeCursor(one=None)])
-    ) == 1
+    assert (
+        await adapter._next_batch(  # pyright: ignore[reportPrivateUsage]
+            FakeConnection([FakeCursor(one=None)])
+        )
+        == 1
+    )
 
 
 @pytest.mark.asyncio
@@ -353,6 +358,4 @@ async def test_column_contract_and_missing_insert_result_are_rejected() -> None:
 
 
 def test_nonmapping_rows_are_never_trusted() -> None:
-    from postgres_mcp.migrations import postgres_backend
-
     assert postgres_backend._mapping(("unexpected",)) == {}  # pyright: ignore[reportPrivateUsage]
