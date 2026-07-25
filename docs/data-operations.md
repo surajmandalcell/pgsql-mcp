@@ -12,7 +12,7 @@ Structured data operations are a bounded context separate from raw SQL, migratio
 | `update_rows` | unrestricted | Update a filtered set with optional optimistic-concurrency predicates |
 | `delete_rows` | unrestricted | Delete a filtered set with optional optimistic-concurrency predicates |
 
-The lite profile intentionally omits this bounded context.
+The lite profile intentionally omits this bounded context. That exclusion is structural: the lite server does not register these tools or import the data-operations adapter.
 
 ## Domain invariants
 
