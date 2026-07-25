@@ -32,8 +32,7 @@ def test_behavior_registry_covers_explicit_and_default_denials() -> None:
     assert planner._behavior("unknown", "VACUUM") is MigrationBehavior.FORBIDDEN  # pyright: ignore[reportPrivateUsage]
     assert planner._behavior("unknown", "CREATE DATABASE app") is MigrationBehavior.FORBIDDEN  # pyright: ignore[reportPrivateUsage]
     assert (  # pyright: ignore[reportPrivateUsage]
-        planner._behavior("unknown", "CREATE USER MAPPING FOR app SERVER remote")
-        is MigrationBehavior.EXTERNAL_SIDE_EFFECT
+        planner._behavior("unknown", "CREATE USER MAPPING FOR app SERVER remote") is MigrationBehavior.EXTERNAL_SIDE_EFFECT
     )
     assert planner._behavior("unknown", "NOTIFY cache_refresh") is MigrationBehavior.EXTERNAL_SIDE_EFFECT  # pyright: ignore[reportPrivateUsage]
     assert planner._behavior("unknown", "ANALYZE app.items") is MigrationBehavior.FORBIDDEN  # pyright: ignore[reportPrivateUsage]
