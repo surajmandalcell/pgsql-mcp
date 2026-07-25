@@ -13,6 +13,7 @@ from postgres_mcp.sql import query_guard
 from postgres_mcp.sql import transaction
 from postgres_mcp.sql.transaction import TransactionStep
 from postgres_mcp.sql.transaction import TransactionValidationError
+from postgres_mcp.sql.transaction import parse_single_statement
 from postgres_mcp.sql.transaction import sql_for_validation
 from postgres_mcp.sql.transaction import validate_transaction_steps
 
@@ -29,9 +30,9 @@ def test_placeholder_scanner_preserves_doubled_quotes_and_lonely_dollar_prefix()
     assert rendered.endswith("NULL")
 
 
-def test_transaction_ast_traversal_skips_missing_slots(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_transaction_ast_traversal_skips_private_and_missing_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     class DefensiveNode:
-        __slots__ = ("children", "missing")
+        __slots__ = ("_private", "children", "missing")
 
         def __init__(self) -> None:
             self.children: tuple[Any, ...] = ()
@@ -47,9 +48,9 @@ def test_transaction_ast_traversal_skips_missing_slots(monkeypatch: pytest.Monke
     )
 
 
-def test_query_guard_ast_traversal_skips_missing_slots(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_query_guard_ast_traversal_skips_private_and_missing_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     class DefensiveNode:
-        __slots__ = ("children", "missing")
+        __slots__ = ("_private", "children", "missing")
 
         def __init__(self) -> None:
             self.children: tuple[Any, ...] = ()
@@ -57,6 +58,12 @@ def test_query_guard_ast_traversal_skips_missing_slots(monkeypatch: pytest.Monke
     monkeypatch.setattr(query_guard, "Node", DefensiveNode)
 
     query_guard._reject_session_mutation(DefensiveNode())  # pyright: ignore[reportPrivateUsage]
+
+
+def test_query_guard_allows_nonmutating_functions() -> None:
+    statement = parse_single_statement("SELECT pg_catalog.lower('A')", parameter_count=0)
+
+    query_guard._reject_session_mutation(statement)  # pyright: ignore[reportPrivateUsage]
 
 
 def test_transaction_policy_remains_safe_when_merge_ast_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
