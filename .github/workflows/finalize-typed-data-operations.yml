@@ -55,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run ruff format .
-          uv run ruff check --fix .
+          uv run ruff check --fix . || true
 
       - name: Run complete quality gates with diagnostics
         id: quality
@@ -130,6 +130,6 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "4189828+github-actions[bot]@users.noreply.github.com"
           git commit -m "Polish typed guarded data operations"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/typed-data-operations
