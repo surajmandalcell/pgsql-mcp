@@ -33,9 +33,7 @@ def test_total_sql_budget_is_checked_before_parsing(
 def test_behavior_registry_covers_explicit_and_default_denials() -> None:
     assert planner._behavior("unknown", "VACUUM") is MigrationBehavior.FORBIDDEN
     assert planner._behavior("unknown", "CREATE DATABASE app") is MigrationBehavior.FORBIDDEN
-    assert (
-        planner._behavior("unknown", "CREATE USER MAPPING FOR app SERVER remote") is MigrationBehavior.EXTERNAL_SIDE_EFFECT
-    )
+    assert planner._behavior("unknown", "CREATE USER MAPPING FOR app SERVER remote") is MigrationBehavior.EXTERNAL_SIDE_EFFECT
     assert planner._behavior("unknown", "NOTIFY cache_refresh") is MigrationBehavior.EXTERNAL_SIDE_EFFECT
     assert planner._behavior("unknown", "ANALYZE app.items") is MigrationBehavior.FORBIDDEN
 
