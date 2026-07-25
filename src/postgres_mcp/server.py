@@ -31,6 +31,8 @@ from .catalog_advanced import get_server_info_data  # noqa: E402
 from .catalog_advanced import list_postgres_types_data  # noqa: E402
 from .catalog_advanced import list_relations_data  # noqa: E402
 from .catalog_advanced import search_catalog_data  # noqa: E402
+from .data_ops import MAX_DATA_RESULT_BYTES  # noqa: E402
+from .data_ops import MAX_DATA_ROWS  # noqa: E402
 from .data_ops import ComparisonOperator  # noqa: E402
 from .data_ops import DataOperationError  # noqa: E402
 from .data_ops import DataService  # noqa: E402
@@ -38,8 +40,6 @@ from .data_ops import DeleteRowsRequest  # noqa: E402
 from .data_ops import FilterCondition  # noqa: E402
 from .data_ops import FilterSet  # noqa: E402
 from .data_ops import InsertRowsRequest  # noqa: E402
-from .data_ops import MAX_DATA_RESULT_BYTES  # noqa: E402
-from .data_ops import MAX_DATA_ROWS  # noqa: E402
 from .data_ops import MutationGuard  # noqa: E402
 from .data_ops import OrderDirection  # noqa: E402
 from .data_ops import OrderTerm  # noqa: E402

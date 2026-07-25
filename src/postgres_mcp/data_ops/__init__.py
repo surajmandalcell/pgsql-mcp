@@ -1,5 +1,7 @@
 """Structured, guarded PostgreSQL data operations."""
 
+from .domain import MAX_DATA_RESULT_BYTES
+from .domain import MAX_DATA_ROWS
 from .domain import ComparisonOperator
 from .domain import DataConflictError
 from .domain import DataExecutionError
@@ -9,8 +11,6 @@ from .domain import DeleteRowsRequest
 from .domain import FilterCondition
 from .domain import FilterSet
 from .domain import InsertRowsRequest
-from .domain import MAX_DATA_RESULT_BYTES
-from .domain import MAX_DATA_ROWS
 from .domain import MutationGuard
 from .domain import MutationResult
 from .domain import OrderDirection
@@ -26,6 +26,8 @@ from .service import DataRepository
 from .service import DataService
 
 __all__ = [
+    "MAX_DATA_RESULT_BYTES",
+    "MAX_DATA_ROWS",
     "ComparisonOperator",
     "DataConflictError",
     "DataExecutionError",
@@ -37,8 +39,6 @@ __all__ = [
     "FilterCondition",
     "FilterSet",
     "InsertRowsRequest",
-    "MAX_DATA_RESULT_BYTES",
-    "MAX_DATA_ROWS",
     "MutationGuard",
     "MutationResult",
     "OrderDirection",

@@ -217,9 +217,7 @@ async def test_single_oversized_selected_row_is_rejected_without_mutation(data_c
             SelectRowsRequest(
                 relation=target,
                 columns=("id", "name"),
-                filters=FilterSet(
-                    all_of=(FilterCondition("email", ComparisonOperator.EQ, "large@example.com"),)
-                ),
+                filters=FilterSet(all_of=(FilterCondition("email", ComparisonOperator.EQ, "large@example.com"),)),
                 order_by=(OrderTerm("id"),),
                 limit=1,
             )

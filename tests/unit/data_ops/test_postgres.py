@@ -58,9 +58,7 @@ class TestableRepository(PostgresDataRepository):
     async def run_transaction(self, *, read_only: bool, operation: Any) -> Any:
         return await self._transaction(read_only=read_only, operation=operation)
 
-    def bounded_page(
-        self, rows: list[dict[str, Any]], *, limit: int, hidden: dict[str, str]
-    ) -> tuple[list[dict[str, Any]], int | None, str | None]:
+    def bounded_page(self, rows: list[dict[str, Any]], *, limit: int, hidden: dict[str, str]) -> tuple[list[dict[str, Any]], int | None, str | None]:
         return self._bounded_page_rows(rows, limit=limit, hidden=hidden)
 
 

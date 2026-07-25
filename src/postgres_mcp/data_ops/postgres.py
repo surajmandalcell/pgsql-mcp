@@ -12,16 +12,17 @@ from typing import TypeVar
 from psycopg import InterfaceError
 from psycopg import OperationalError
 from psycopg.rows import dict_row
+from psycopg.sql import SQL
 from psycopg.sql import Composable
 from psycopg.sql import Identifier
 from psycopg.sql import Placeholder
-from psycopg.sql import SQL
 
 from postgres_mcp.runtime import DEFAULT_LOCK_TIMEOUT_SECONDS
 from postgres_mcp.runtime import DEFAULT_QUERY_TIMEOUT_SECONDS
 from postgres_mcp.sql import SqlDriver
 from postgres_mcp.sql import json_text
 
+from .domain import MAX_DATA_RESULT_BYTES
 from .domain import ComparisonOperator
 from .domain import DataConflictError
 from .domain import DataExecutionError
@@ -30,7 +31,6 @@ from .domain import DeleteRowsRequest
 from .domain import FilterCondition
 from .domain import FilterSet
 from .domain import InsertRowsRequest
-from .domain import MAX_DATA_RESULT_BYTES
 from .domain import MutationGuard
 from .domain import MutationResult
 from .domain import OrderDirection
@@ -127,9 +127,7 @@ class PostgresDataRepository:
                         async with connection.cursor(row_factory=dict_row) as cursor:
                             started = True
                             await cursor.execute(
-                                "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
-                                if read_only
-                                else "BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE"
+                                "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY" if read_only else "BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE"
                             )
                             await cursor.execute(
                                 "SELECT set_config('statement_timeout', %s, true)",
@@ -145,9 +143,7 @@ class PostgresDataRepository:
                             )
                             await cursor.execute("SELECT set_config('row_security', 'on', true)")
                             await cursor.execute("SELECT set_config('search_path', 'pg_catalog', true)")
-                            await cursor.execute(
-                                "SELECT set_config('application_name', 'pgsql-mcp:data-operations', true)"
-                            )
+                            await cursor.execute("SELECT set_config('application_name', 'pgsql-mcp:data-operations', true)")
                             result = await operation(cursor)
 
                         if read_only:
@@ -223,9 +219,7 @@ class PostgresDataRepository:
         writable: bool,
     ) -> RelationMetadata:
         privilege_checks = (
-            SQL(" AND ").join(
-                SQL("pg_catalog.has_table_privilege(c.oid, {})").format(Placeholder()) for _ in privileges
-            )
+            SQL(" AND ").join(SQL("pg_catalog.has_table_privilege(c.oid, {})").format(Placeholder()) for _ in privileges)
             if privileges
             else SQL("TRUE")
         )
@@ -443,9 +437,7 @@ class PostgresDataRepository:
             row_bytes = cls._encoded_bytes(row) + (1 if visible else 0)
             if encoded_bytes + row_bytes > MAX_DATA_RESULT_BYTES:
                 if not visible:
-                    raise DataValidationError(
-                        "a single selected row exceeds the structured response byte limit; narrow the projection"
-                    )
+                    raise DataValidationError("a single selected row exceeds the structured response byte limit; narrow the projection")
                 stop_index = index
                 reason = "byte_limit"
                 break
@@ -490,9 +482,7 @@ class PostgresDataRepository:
                     alias = f"__mcp_order_{index}"
                     hidden[term.column] = alias
                     projection.append(SQL("{} AS {}").format(Identifier(term.column), Identifier(alias)))
-            order_sql = SQL(", ").join(
-                SQL("{} {}").format(Identifier(term.column), _DIRECTION_SQL[term.direction]) for term in order
-            )
+            order_sql = SQL(", ").join(SQL("{} {}").format(Identifier(term.column), _DIRECTION_SQL[term.direction]) for term in order)
             query = SQL("SELECT {} FROM {}.{} WHERE ({}) AND ({}) ORDER BY {} LIMIT {}").format(
                 SQL(", ").join(projection),
                 Identifier(request.relation.schema),
@@ -533,9 +523,7 @@ class PostgresDataRepository:
             metadata = await self._load_metadata(cursor, request.relation, privileges=("INSERT",), writable=True)
             columns = tuple(request.rows[0])
             self._validate_insert_columns(metadata, columns)
-            values_sql = SQL(", ").join(
-                SQL("({})").format(SQL(", ").join(Placeholder() for _ in columns)) for _ in request.rows
-            )
+            values_sql = SQL(", ").join(SQL("({})").format(SQL(", ").join(Placeholder() for _ in columns)) for _ in request.rows)
             query = SQL("INSERT INTO {}.{} ({}) VALUES {}").format(
                 Identifier(request.relation.schema),
                 Identifier(request.relation.name),
@@ -559,9 +547,7 @@ class PostgresDataRepository:
             self._validate_update_columns(metadata, request.update_columns)
             if not any(set(key) == set(request.conflict_columns) for key in metadata.unique_keys):
                 raise DataValidationError("conflict_columns must match a non-partial primary or unique key")
-            values_sql = SQL(", ").join(
-                SQL("({})").format(SQL(", ").join(Placeholder() for _ in columns)) for _ in request.rows
-            )
+            values_sql = SQL(", ").join(SQL("({})").format(SQL(", ").join(Placeholder() for _ in columns)) for _ in request.rows)
             query = SQL("INSERT INTO {}.{} ({}) VALUES {} ON CONFLICT ({}) ").format(
                 Identifier(request.relation.schema),
                 Identifier(request.relation.name),
@@ -592,9 +578,7 @@ class PostgresDataRepository:
             self._validate_update_columns(metadata, columns)
             base_filter, filter_params = self._filters(request.filters, metadata)
             concurrency_filter, concurrency_params = self._filters(request.concurrency, metadata)
-            assignments = SQL(", ").join(
-                SQL("{} = {}").format(Identifier(column), Placeholder()) for column in columns
-            )
+            assignments = SQL(", ").join(SQL("{} = {}").format(Identifier(column), Placeholder()) for column in columns)
             query = SQL("UPDATE {}.{} SET {} WHERE ({}) AND ({})").format(
                 Identifier(request.relation.schema),
                 Identifier(request.relation.name),

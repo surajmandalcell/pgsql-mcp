@@ -79,18 +79,16 @@ async def test_insert_update_delete_and_upsert_forward_guards() -> None:
         patch.object(server, "get_data_service", return_value=service),
         patch.object(server, "current_access_mode", AccessMode.UNRESTRICTED),
     ):
-        assert payload(
-            await server.insert_rows("app", "items", [{"name": "one"}], ["id"], 1, 1)
-        ) == {"affected_rows": 1, "rows": [{"id": 1}]}
-        assert payload(
-            await server.upsert_rows("app", "items", [{"email": "one@example.com"}], ["email"], [], ["id"], 1, 1)
-        ) == {"affected_rows": 1, "rows": [{"id": 1}]}
-        assert payload(
-            await server.update_rows("app", "items", {"name": "updated"}, where, None, ["id"], 1, 1)
-        ) == {"affected_rows": 1, "rows": [{"id": 1}]}
-        assert payload(
-            await server.delete_rows("app", "items", where, None, ["id"], 1, 1)
-        ) == {"affected_rows": 1, "rows": [{"id": 1}]}
+        assert payload(await server.insert_rows("app", "items", [{"name": "one"}], ["id"], 1, 1)) == {"affected_rows": 1, "rows": [{"id": 1}]}
+        assert payload(await server.upsert_rows("app", "items", [{"email": "one@example.com"}], ["email"], [], ["id"], 1, 1)) == {
+            "affected_rows": 1,
+            "rows": [{"id": 1}],
+        }
+        assert payload(await server.update_rows("app", "items", {"name": "updated"}, where, None, ["id"], 1, 1)) == {
+            "affected_rows": 1,
+            "rows": [{"id": 1}],
+        }
+        assert payload(await server.delete_rows("app", "items", where, None, ["id"], 1, 1)) == {"affected_rows": 1, "rows": [{"id": 1}]}
 
     assert service.insert.await_args.args[0].guard.expected_rows == 1
     assert service.upsert.await_args.args[0].conflict_columns == ("email",)
