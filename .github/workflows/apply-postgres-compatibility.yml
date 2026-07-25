@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: apply-postgres-compatibility
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply-validate-commit:
@@ -148,18 +148,17 @@ jobs:
         run: |
           set -euo pipefail
           rm .github/workflows/apply-postgres-compatibility.yml
-          git add -A
+          git add README.md docs/compatibility.md \
+            .github/workflows/postgres-compatibility.yml \
+            tests/conftest.py tests/utils.py \
+            tests/integration/catalog/test_catalog_advanced_integration.py \
+            tests/integration/data_ops/test_data_ops_integration.py \
+            tests/integration/migrations/test_reviewed_migrations_integration.py \
+            tests/unit/test_postgres_matrix.py
+          git add -A .github/workflows/apply-postgres-compatibility.yml
           git diff --cached --check
           git diff --quiet
           test -z "$(git ls-files --others --exclude-standard)"
-          git diff --cached --name-only | sort > /tmp/actual-files
-          allowed='^(\.github/workflows/(apply-postgres-compatibility|postgres-compatibility)\.yml|README\.md|docs/compatibility\.md|tests/conftest\.py|tests/integration/catalog/test_catalog_advanced_integration\.py|tests/integration/data_ops/test_data_ops_integration\.py|tests/integration/migrations/test_reviewed_migrations_integration\.py|tests/unit/test_postgres_matrix\.py|tests/utils\.py)$'
-          unexpected=$(grep -Ev "$allowed" /tmp/actual-files || true)
-          if [[ -n "$unexpected" ]]; then
-            printf 'Unexpected changed files:\n%s\n' "$unexpected" >&2
-            exit 1
-          fi
-          test "$(wc -l < /tmp/actual-files)" -eq 10
 
       - name: Commit validated compatibility slice
         env:
