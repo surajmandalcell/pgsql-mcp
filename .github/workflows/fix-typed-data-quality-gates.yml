@@ -1,11 +1,13 @@
 name: Fix typed data quality gates
 
 on:
-  push:
+  pull_request:
     branches:
-      - feature/typed-data-operations
-    paths:
-      - .github/workflows/fix-typed-data-quality-gates.yml
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
@@ -16,14 +18,15 @@ concurrency:
 
 jobs:
   fix-validate-commit:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
-      - name: Checkout exact branch head without persisted credentials
+      - name: Checkout exact PR head without persisted credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
           fetch-depth: 0
 
