@@ -31,6 +31,23 @@ from .catalog_advanced import get_server_info_data  # noqa: E402
 from .catalog_advanced import list_postgres_types_data  # noqa: E402
 from .catalog_advanced import list_relations_data  # noqa: E402
 from .catalog_advanced import search_catalog_data  # noqa: E402
+from .data_ops import ComparisonOperator  # noqa: E402
+from .data_ops import DataOperationError  # noqa: E402
+from .data_ops import DataService  # noqa: E402
+from .data_ops import DeleteRowsRequest  # noqa: E402
+from .data_ops import FilterCondition  # noqa: E402
+from .data_ops import FilterSet  # noqa: E402
+from .data_ops import InsertRowsRequest  # noqa: E402
+from .data_ops import MAX_DATA_RESULT_BYTES  # noqa: E402
+from .data_ops import MAX_DATA_ROWS  # noqa: E402
+from .data_ops import MutationGuard  # noqa: E402
+from .data_ops import OrderDirection  # noqa: E402
+from .data_ops import OrderTerm  # noqa: E402
+from .data_ops import PostgresDataRepository  # noqa: E402
+from .data_ops import QualifiedRelation  # noqa: E402
+from .data_ops import SelectRowsRequest  # noqa: E402
+from .data_ops import UpdateRowsRequest  # noqa: E402
+from .data_ops import UpsertRowsRequest  # noqa: E402
 from .explain import ExplainPlanTool  # noqa: E402
 from .migrations import MigrationError  # noqa: E402
 from .migrations import MigrationExecutionError  # noqa: E402
@@ -89,6 +106,28 @@ class MigrationStepInput(BaseModel):
     rollback_sql: str = Field(description="Exactly one compensating PostgreSQL statement")
 
 
+class FilterConditionInput(BaseModel):
+    """One typed value-bound data filter."""
+
+    column: str = Field(description="Exact column name")
+    operator: Literal["eq", "ne", "lt", "lte", "gt", "gte", "in", "not_in", "like", "ilike", "is_null", "is_not_null"]
+    value: Any = Field(default=None, description="Bound value; omit for null operators")
+
+
+class FilterSetInput(BaseModel):
+    """A bounded `(all predicates) AND (any predicates)` filter."""
+
+    all: list[FilterConditionInput] = Field(default_factory=list, description="Predicates combined with AND")
+    any: list[FilterConditionInput] = Field(default_factory=list, description="Predicates combined with OR")
+
+
+class OrderTermInput(BaseModel):
+    """One stable keyset ordering term."""
+
+    column: str = Field(description="Exact NOT NULL order column")
+    direction: Literal["asc", "desc"] = Field(default="asc")
+
+
 class TransactionStepInput(BaseModel):
     """One guarded statement in an atomic transaction request."""
 
@@ -128,6 +167,33 @@ def get_base_sql_driver() -> SqlDriver:
 def get_migration_service() -> MigrationService:
     """Build the reviewed migration application service for this database."""
     return MigrationService(PostgresMigrationBackend(get_base_sql_driver(), ledger_schema=current_migration_schema))
+
+
+def get_data_service() -> DataService:
+    """Build the structured data-operations application service."""
+    return DataService(
+        PostgresDataRepository(
+            get_base_sql_driver(),
+            timeout_seconds=current_query_timeout,
+            lock_timeout_seconds=min(current_query_timeout, DEFAULT_LOCK_TIMEOUT_SECONDS),
+        )
+    )
+
+
+def _filter_set(value: FilterSetInput | None) -> FilterSet:
+    if value is None:
+        return FilterSet()
+
+    def condition(item: FilterConditionInput) -> FilterCondition:
+        operator = ComparisonOperator(item.operator)
+        if operator in {ComparisonOperator.IS_NULL, ComparisonOperator.IS_NOT_NULL}:
+            return FilterCondition(item.column, operator)
+        return FilterCondition(item.column, operator, item.value)
+
+    return FilterSet(
+        all_of=tuple(condition(item) for item in value.all),
+        any_of=tuple(condition(item) for item in value.any),
+    )
 
 
 def format_text_response(text: Any) -> ResponseType:
@@ -187,6 +253,16 @@ async def get_server_capabilities() -> ResponseType:
                 "rollback_policy_revalidated": True,
                 "ambiguous_commit_state_reported": True,
                 "non_transactional_apply": False,
+            },
+            "data_operations": {
+                "structured_filters": True,
+                "identifier_composition": "psycopg.sql.Identifier",
+                "keyset_pagination": True,
+                "select_available": True,
+                "mutations_available": current_access_mode is AccessMode.UNRESTRICTED,
+                "max_rows": MAX_DATA_ROWS,
+                "max_result_bytes": MAX_DATA_RESULT_BYTES,
+                "write_guards": ["max_affected_rows", "expected_rows", "optimistic_concurrency"],
             },
             "result_encoding": "lossless-tagged-json-fallback",
         }
@@ -375,6 +451,138 @@ async def get_postgres_type(
         )
     except Exception as exc:
         logger.exception("Error getting PostgreSQL type details")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Select bounded rows using catalog-validated identifiers, typed filters, and keyset pagination")
+async def select_rows(
+    schema_name: Annotated[str, Field(description="Exact schema name")],
+    relation_name: Annotated[str, Field(description="Exact table or readable relation name")],
+    columns: Annotated[list[str] | None, Field(description="Projected columns; omit to select every column")] = None,
+    where: Annotated[FilterSetInput | None, Field(description="Structured value-bound filter")] = None,
+    order_by: Annotated[list[OrderTermInput] | None, Field(description="Stable order including a primary or unique key")] = None,
+    limit: Annotated[int, Field(description="Maximum visible rows", ge=1, le=MAX_DATA_ROWS)] = 100,
+    cursor: Annotated[str | None, Field(description="Opaque keyset cursor from a prior page")] = None,
+) -> ResponseType:
+    """Read through the structured data boundary; available in every access mode."""
+    try:
+        request = SelectRowsRequest(
+            relation=QualifiedRelation(schema_name, relation_name),
+            columns=tuple(columns or ()),
+            filters=_filter_set(where),
+            order_by=tuple(OrderTerm(item.column, OrderDirection(item.direction)) for item in (order_by or ())),
+            limit=limit,
+            cursor=cursor,
+        )
+        return format_text_response((await get_data_service().select(request)).to_payload())
+    except (DataOperationError, ValueError) as exc:
+        logger.exception("Error selecting structured rows")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Insert bounded typed rows with exact affected-row commit guards")
+async def insert_rows(
+    schema_name: Annotated[str, Field(description="Exact schema name")],
+    relation_name: Annotated[str, Field(description="Exact table name")],
+    rows: Annotated[list[dict[str, Any]], Field(description="Rows sharing one column set", min_length=1, max_length=MAX_DATA_ROWS)],
+    returning: Annotated[list[str] | None, Field(description="Columns returned after commit validation")] = None,
+    max_affected_rows: Annotated[int, Field(description="Hard mutation ceiling", ge=1, le=MAX_DATA_ROWS)] = 1,
+    expected_rows: Annotated[int | None, Field(description="Optional exact affected row count", ge=0)] = None,
+) -> ResponseType:
+    if current_access_mode is not AccessMode.UNRESTRICTED:
+        return format_error_response("insert_rows requires unrestricted mode")
+    try:
+        request = InsertRowsRequest(
+            relation=QualifiedRelation(schema_name, relation_name),
+            rows=tuple(rows),
+            returning=tuple(returning or ()),
+            guard=MutationGuard(max_affected_rows, expected_rows),
+        )
+        return format_text_response((await get_data_service().insert(request)).to_payload())
+    except (DataOperationError, ValueError) as exc:
+        logger.exception("Error inserting structured rows")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Upsert typed rows through a verified primary or unique conflict key")
+async def upsert_rows(
+    schema_name: Annotated[str, Field(description="Exact schema name")],
+    relation_name: Annotated[str, Field(description="Exact table name")],
+    rows: Annotated[list[dict[str, Any]], Field(description="Rows sharing one column set", min_length=1, max_length=MAX_DATA_ROWS)],
+    conflict_columns: Annotated[list[str], Field(description="Complete primary or non-partial unique key", min_length=1)],
+    update_columns: Annotated[list[str] | None, Field(description="Inserted columns updated on conflict")] = None,
+    returning: Annotated[list[str] | None, Field(description="Columns returned after commit validation")] = None,
+    max_affected_rows: Annotated[int, Field(description="Hard mutation ceiling", ge=1, le=MAX_DATA_ROWS)] = 1,
+    expected_rows: Annotated[int | None, Field(description="Optional exact affected row count", ge=0)] = None,
+) -> ResponseType:
+    if current_access_mode is not AccessMode.UNRESTRICTED:
+        return format_error_response("upsert_rows requires unrestricted mode")
+    try:
+        request = UpsertRowsRequest(
+            relation=QualifiedRelation(schema_name, relation_name),
+            rows=tuple(rows),
+            conflict_columns=tuple(conflict_columns),
+            update_columns=tuple(update_columns or ()),
+            returning=tuple(returning or ()),
+            guard=MutationGuard(max_affected_rows, expected_rows),
+        )
+        return format_text_response((await get_data_service().upsert(request)).to_payload())
+    except (DataOperationError, ValueError) as exc:
+        logger.exception("Error upserting structured rows")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Update typed values with mandatory filters, optimistic predicates, and commit guards")
+async def update_rows(
+    schema_name: Annotated[str, Field(description="Exact schema name")],
+    relation_name: Annotated[str, Field(description="Exact table name")],
+    values: Annotated[dict[str, Any], Field(description="Columns and bound replacement values")],
+    where: Annotated[FilterSetInput, Field(description="Mandatory structured target filter")],
+    concurrency: Annotated[FilterSetInput | None, Field(description="Optional optimistic concurrency predicates")] = None,
+    returning: Annotated[list[str] | None, Field(description="Columns returned after commit validation")] = None,
+    max_affected_rows: Annotated[int, Field(description="Hard mutation ceiling", ge=1, le=MAX_DATA_ROWS)] = 1,
+    expected_rows: Annotated[int | None, Field(description="Optional exact affected row count", ge=0)] = None,
+) -> ResponseType:
+    if current_access_mode is not AccessMode.UNRESTRICTED:
+        return format_error_response("update_rows requires unrestricted mode")
+    try:
+        request = UpdateRowsRequest(
+            relation=QualifiedRelation(schema_name, relation_name),
+            values=values,
+            filters=_filter_set(where),
+            concurrency=_filter_set(concurrency),
+            returning=tuple(returning or ()),
+            guard=MutationGuard(max_affected_rows, expected_rows),
+        )
+        return format_text_response((await get_data_service().update(request)).to_payload())
+    except (DataOperationError, ValueError) as exc:
+        logger.exception("Error updating structured rows")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Delete rows with mandatory filters, optimistic predicates, and commit guards")
+async def delete_rows(
+    schema_name: Annotated[str, Field(description="Exact schema name")],
+    relation_name: Annotated[str, Field(description="Exact table name")],
+    where: Annotated[FilterSetInput, Field(description="Mandatory structured target filter")],
+    concurrency: Annotated[FilterSetInput | None, Field(description="Optional optimistic concurrency predicates")] = None,
+    returning: Annotated[list[str] | None, Field(description="Columns returned after commit validation")] = None,
+    max_affected_rows: Annotated[int, Field(description="Hard mutation ceiling", ge=1, le=MAX_DATA_ROWS)] = 1,
+    expected_rows: Annotated[int | None, Field(description="Optional exact affected row count", ge=0)] = None,
+) -> ResponseType:
+    if current_access_mode is not AccessMode.UNRESTRICTED:
+        return format_error_response("delete_rows requires unrestricted mode")
+    try:
+        request = DeleteRowsRequest(
+            relation=QualifiedRelation(schema_name, relation_name),
+            filters=_filter_set(where),
+            concurrency=_filter_set(concurrency),
+            returning=tuple(returning or ()),
+            guard=MutationGuard(max_affected_rows, expected_rows),
+        )
+        return format_text_response((await get_data_service().delete(request)).to_payload())
+    except (DataOperationError, ValueError) as exc:
+        logger.exception("Error deleting structured rows")
         return format_error_response(str(exc))
 
 
