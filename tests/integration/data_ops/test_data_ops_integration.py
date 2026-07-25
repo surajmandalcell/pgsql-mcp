@@ -1,4 +1,4 @@
-"""PostgreSQL 15/16 integration contracts for typed guarded data operations."""
+"""Supported-PostgreSQL integration contracts for typed guarded data operations."""
 
 from __future__ import annotations
 
