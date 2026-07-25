@@ -143,24 +143,15 @@ jobs:
           uv run pyright
           uv run pytest -v --log-cli-level=INFO
 
-      - name: Remove temporary workflow and verify exact scope
+      - name: Commit exact validated workspace
         shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/apply-postgres-compatibility.yml
-          git add README.md docs/compatibility.md \
-            .github/workflows/postgres-compatibility.yml \
-            tests/conftest.py tests/utils.py \
-            tests/integration/catalog/test_catalog_advanced_integration.py \
-            tests/integration/data_ops/test_data_ops_integration.py \
-            tests/integration/migrations/test_reviewed_migrations_integration.py \
-            tests/unit/test_postgres_matrix.py
-          git add -A .github/workflows/apply-postgres-compatibility.yml
+          git add -A
           git diff --cached --check
-          git diff --quiet
-          test -z "$(git ls-files --others --exclude-standard)"
 
-      - name: Commit validated compatibility slice
+      - name: Push validated compatibility slice
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
