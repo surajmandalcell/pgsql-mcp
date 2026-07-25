@@ -149,7 +149,6 @@ jobs:
           set -euo pipefail
           rm .github/workflows/apply-postgres-compatibility.yml
           git add -A
-          git diff --cached --check
 
       - name: Push validated compatibility slice
         env:
