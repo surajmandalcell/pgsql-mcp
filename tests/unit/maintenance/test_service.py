@@ -32,8 +32,11 @@ def snapshot() -> TargetSnapshot:
     return TargetSnapshot(
         oid=42,
         relation_kind="r",
+        persistence="p",
         is_partition=False,
+        is_populated=True,
         has_usable_unique_index=False,
+        is_exclusion_index=False,
     )
 
 
