@@ -1,0 +1,89 @@
+name: Fix PostgreSQL compatibility staging
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-postgres-compatibility-staging
+  cancel-in-progress: true
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout exact PR head without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Replace manifest counting with explicit path staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/workflows/apply-postgres-compatibility.yml")
+          content = path.read_text()
+          old = '''          rm .github/workflows/apply-postgres-compatibility.yml
+          git add -A
+          git diff --cached --check
+          git diff --quiet
+          test -z "$(git ls-files --others --exclude-standard)"
+          git diff --cached --name-only | sort > /tmp/actual-files
+          allowed='^(\\.github/workflows/(apply-postgres-compatibility|postgres-compatibility)\\.yml|README\\.md|docs/compatibility\\.md|tests/conftest\\.py|tests/integration/catalog/test_catalog_advanced_integration\\.py|tests/integration/data_ops/test_data_ops_integration\\.py|tests/integration/migrations/test_reviewed_migrations_integration\\.py|tests/unit/test_postgres_matrix\\.py|tests/utils\\.py)$'
+          unexpected=$(grep -Ev "$allowed" /tmp/actual-files || true)
+          if [[ -n "$unexpected" ]]; then
+            printf 'Unexpected changed files:\\n%s\\n' "$unexpected" >&2
+            exit 1
+          fi
+          test "$(wc -l < /tmp/actual-files)" -eq 10
+'''
+          new = '''          rm .github/workflows/apply-postgres-compatibility.yml
+          git add README.md docs/compatibility.md \\
+            .github/workflows/postgres-compatibility.yml \\
+            tests/conftest.py tests/utils.py \\
+            tests/integration/catalog/test_catalog_advanced_integration.py \\
+            tests/integration/data_ops/test_data_ops_integration.py \\
+            tests/integration/migrations/test_reviewed_migrations_integration.py \\
+            tests/unit/test_postgres_matrix.py
+          git add -A .github/workflows/apply-postgres-compatibility.yml
+          git diff --cached --check
+          git diff --quiet
+          test -z "$(git ls-files --others --exclude-standard)"
+'''
+          if content.count(old) != 1:
+              raise RuntimeError("expected one compatibility staging guard")
+          path.write_text(content.replace(old, new, 1))
+          PY
+          rm .github/workflows/fix-postgres-compatibility-staging.yml
+          git add .github/workflows/apply-postgres-compatibility.yml \
+            .github/workflows/fix-postgres-compatibility-staging.yml
+          git diff --cached --check
+          git diff --quiet
+          test -z "$(git ls-files --others --exclude-standard)"
+
+      - name: Commit staging correction
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Stage PostgreSQL compatibility files explicitly"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/postgres-compatibility-matrix
