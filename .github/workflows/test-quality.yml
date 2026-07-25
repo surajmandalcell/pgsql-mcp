@@ -59,16 +59,21 @@ jobs:
           uv run --with 'coverage[toml]>=7.6,<8' coverage report -m \
             --include='src/postgres_mcp/sql/*,src/postgres_mcp/migrations/*,src/postgres_mcp/data_ops/*' \
             | tee critical-coverage-report.txt
+          uv run --with 'coverage[toml]>=7.6,<8' coverage report -m \
+            --fail-under=100 \
+            --include='src/postgres_mcp/runtime.py,src/postgres_mcp/sql/query_guard.py,src/postgres_mcp/sql/results.py,src/postgres_mcp/sql/transaction.py,src/postgres_mcp/migrations/service.py,src/postgres_mcp/data_ops/service.py' \
+            | tee safety-kernel-coverage-report.txt
           uv run --with 'coverage[toml]>=7.6,<8' coverage xml -o coverage.xml
           uv run --with 'coverage[toml]>=7.6,<8' coverage json -o coverage.json
 
-      - name: Report changed-line coverage
+      - name: Enforce changed-line coverage
         if: github.event_name == 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
           uv run --with 'diff-cover>=9,<10' diff-cover coverage.xml \
             --compare-branch=origin/${{ github.base_ref }} \
+            --fail-under=100 \
             --html-report diff-coverage.html \
             | tee diff-coverage.txt
 
@@ -82,6 +87,7 @@ jobs:
             coverage-pytest.txt
             coverage-report.txt
             critical-coverage-report.txt
+            safety-kernel-coverage-report.txt
             coverage.xml
             coverage.json
             diff-coverage.txt
