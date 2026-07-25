@@ -169,6 +169,16 @@ class SqlDriver:
         raise ValueError("Connection not established. Either conn or engine_url must be provided")
 
     @asynccontextmanager
+    async def connection(self) -> AsyncIterator[Any]:
+        """Yield one checked-out connection for a bounded infrastructure operation.
+
+        The public context deliberately reuses the driver's existing lifecycle so
+        adapters do not depend on the private ``_connection`` implementation.
+        """
+        async with self._connection() as connection:
+            yield connection
+
+    @asynccontextmanager
     async def _connection(self) -> AsyncIterator[Any]:
         if self.conn is None:
             self.connect()

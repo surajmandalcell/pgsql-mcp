@@ -105,10 +105,7 @@ def ledger_columns() -> list[dict[str, Any]]:
         ("applied_at", 1184, True, ""),
         ("applied_by", 19, True, ""),
     ]
-    return [
-        {"name": name, "type_oid": oid, "not_null": not_null, "identity_kind": identity}
-        for name, oid, not_null, identity in definitions
-    ]
+    return [{"name": name, "type_oid": oid, "not_null": not_null, "identity_kind": identity} for name, oid, not_null, identity in definitions]
 
 
 def ledger_row(plan, *, migration_id: int = 7) -> dict[str, Any]:

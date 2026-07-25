@@ -14,9 +14,9 @@ from postgres_mcp.migrations import MigrationConflictError
 from postgres_mcp.migrations import MigrationExecutionError
 from postgres_mcp.migrations import MigrationOperationResult
 from postgres_mcp.migrations import MigrationOperationStatus
+from postgres_mcp.migrations import MigrationPlanner
 from postgres_mcp.migrations import MigrationStatusSnapshot
 from postgres_mcp.migrations import MigrationStepDraft
-from postgres_mcp.migrations import MigrationPlanner
 from postgres_mcp.runtime import AccessMode
 
 
