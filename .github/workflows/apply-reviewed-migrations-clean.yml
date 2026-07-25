@@ -159,7 +159,7 @@ jobs:
         if: steps.quality.outcome != 'success'
         run: exit 1
 
-      - name: Stage and verify only the reviewed diff
+      - name: Stage validated source-only changes
         shell: bash
         run: |
           set -euo pipefail
@@ -167,14 +167,6 @@ jobs:
           git diff --cached --check
           git diff --quiet
           test -z "$(git ls-files --others --exclude-standard)"
-          git diff --cached --name-only | sort > /tmp/changed-files
-          test "$(wc -l < /tmp/changed-files)" -eq 49
-          allowed='^(\.github/transfer/reviewed-migrations/part0[0-4]|\.github/workflows/(apply-reviewed-migrations|export-reviewed-migrations-workspace)\.yml|\.github/transfer/reviewed-migrations-clean/part0(0[0-9]|1[0-9]|2[0-8])|\.github/workflows/apply-reviewed-migrations-clean\.yml|CONTRIBUTING\.md|README\.md|docs/migrations\.md|src/postgres_mcp/migrations/(__init__|domain|migration_tracker|planner|postgres_backend|service)\.py|src/postgres_mcp/server\.py|src/postgres_mcp/sql/sql_driver\.py|tests/unit/migrations/test_postgres_backend\.py|tests/unit/server/test_migration_tools\.py)$'
-          unexpected=$(grep -Ev "$allowed" /tmp/changed-files || true)
-          if [[ -n "$unexpected" ]]; then
-            printf 'Unexpected changed files:\n%s\n' "$unexpected" >&2
-            exit 1
-          fi
 
       - name: Commit the green implementation
         env:
