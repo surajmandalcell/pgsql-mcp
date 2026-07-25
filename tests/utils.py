@@ -1,10 +1,9 @@
 import logging
 import os
 import time
+from collections.abc import Generator
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Generator
-from typing import Mapping
-from typing import Tuple
 
 import docker
 import pytest
@@ -31,7 +30,7 @@ def configured_postgres_images(environment: Mapping[str, str] | None = None) -> 
     return (image,)
 
 
-def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, None]:
+def create_postgres_container(version: str) -> Generator[tuple[str, str], None, None]:
     """Create a PostgreSQL container of specified version and return its connection string."""
     try:
         client = docker.from_env()
@@ -73,9 +72,9 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
                 rm=True,
             )
             logger.info(f"Successfully built image {custom_image_name}")
-        except Exception as e:
-            logger.error(f"Failed to build Docker image: {e}")
-            pytest.skip(f"Failed to build Docker image: {e}")
+        except Exception as error:
+            logger.error(f"Failed to build Docker image: {error}")
+            pytest.skip(f"Failed to build Docker image: {error}")
 
     postgres_password = "test_password"
     postgres_db = "test_db"
@@ -131,12 +130,11 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
                     logger.info(f"PostgreSQL in container {container_name} is ready")
                     is_ready = True
                     break
-                else:
-                    last_error = output.decode("utf-8")
-                    logger.warning(f"PostgreSQL not ready yet: {last_error}")
-            except Exception as e:
-                last_error = str(e)
-                logger.warning(f"Error checking if PostgreSQL is ready: {e}")
+                last_error = output.decode("utf-8")
+                logger.warning(f"PostgreSQL not ready yet: {last_error}")
+            except Exception as error:
+                last_error = str(error)
+                logger.warning(f"Error checking if PostgreSQL is ready: {error}")
 
             # Get container logs for debugging
             if time.time() - deadline + 60 > 50:  # Log when we're close to timeout
@@ -155,8 +153,8 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
 
         yield connection_string, version
 
-    except Exception as e:
-        logger.error(f"Error setting up PostgreSQL container: {e}")
+    except Exception as error:
+        logger.error(f"Error setting up PostgreSQL container: {error}")
         # Get container logs for debugging
         try:
             logs = container.logs().decode("utf-8")
@@ -170,5 +168,5 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
         try:
             container.stop(timeout=1)
             container.remove(v=True)
-        except Exception as e:
-            logger.warning(f"Error cleaning up container {container_name}: {e}")
+        except Exception as error:
+            logger.warning(f"Error cleaning up container {container_name}: {error}")
