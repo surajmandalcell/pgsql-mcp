@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from utils import DEFAULT_POSTGRES_IMAGES
 from utils import POSTGRES_IMAGE_ENV
 from utils import SUPPORTED_POSTGRES_IMAGES
