@@ -10,6 +10,7 @@ import math
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
+from dataclasses import field
 from datetime import date
 from datetime import datetime
 from datetime import time
@@ -362,7 +363,7 @@ def _validate_guard(value: Any) -> None:
 class SelectRowsRequest:
     relation: QualifiedRelation
     columns: tuple[str, ...] = ()
-    filters: FilterSet = FilterSet()
+    filters: FilterSet = field(default_factory=FilterSet)
     order_by: tuple[OrderTerm, ...] = ()
     limit: int = 100
     cursor: str | None = None

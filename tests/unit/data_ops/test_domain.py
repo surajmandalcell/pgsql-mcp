@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
+from typing import cast
 
 import pytest
 
@@ -168,23 +170,23 @@ def test_mutation_requests_require_explicit_guards_and_safe_shapes() -> None:
 
 def test_request_aggregate_rejects_untyped_collaborators() -> None:
     with pytest.raises(DataValidationError, match="QualifiedRelation"):
-        SelectRowsRequest(  # type: ignore[arg-type]
-            relation="app.accounts",
+        SelectRowsRequest(
+            relation=cast(Any, "app.accounts"),
             columns=(),
             filters=FilterSet(),
             order_by=(OrderTerm("id"),),
         )
     with pytest.raises(DataValidationError, match="FilterSet"):
-        SelectRowsRequest(  # type: ignore[arg-type]
+        SelectRowsRequest(
             relation=relation(),
             columns=(),
-            filters=(),
+            filters=cast(Any, ()),
             order_by=(OrderTerm("id"),),
         )
     with pytest.raises(DataValidationError, match="mapping"):
-        InsertRowsRequest(  # type: ignore[arg-type]
+        InsertRowsRequest(
             relation=relation(),
-            rows=("not-a-row",),
+            rows=cast(Any, ("not-a-row",)),
             returning=(),
             guard=MutationGuard(max_affected_rows=1),
         )

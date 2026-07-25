@@ -54,7 +54,7 @@ class FakeDriver:
         yield self._connection
 
 
-class TestableRepository(PostgresDataRepository):
+class _TestableRepository(PostgresDataRepository):
     async def run_transaction(self, *, read_only: bool, operation: Any) -> Any:
         return await self._transaction(read_only=read_only, operation=operation)
 
@@ -62,8 +62,8 @@ class TestableRepository(PostgresDataRepository):
         return self._bounded_page_rows(rows, limit=limit, hidden=hidden)
 
 
-def repository(connection: FakeConnection) -> TestableRepository:
-    return TestableRepository(cast(SqlDriver, FakeDriver(connection)), timeout_seconds=1, lock_timeout_seconds=1)
+def repository(connection: FakeConnection) -> _TestableRepository:
+    return _TestableRepository(cast(SqlDriver, FakeDriver(connection)), timeout_seconds=1, lock_timeout_seconds=1)
 
 
 @pytest.mark.asyncio
