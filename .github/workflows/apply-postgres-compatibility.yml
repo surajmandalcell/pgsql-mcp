@@ -153,20 +153,13 @@ jobs:
           git diff --quiet
           test -z "$(git ls-files --others --exclude-standard)"
           git diff --cached --name-only | sort > /tmp/actual-files
-          cat > /tmp/expected-files <<'FILES'
-          .github/workflows/apply-postgres-compatibility.yml
-          .github/workflows/postgres-compatibility.yml
-          README.md
-          docs/compatibility.md
-          tests/conftest.py
-          tests/integration/catalog/test_catalog_advanced_integration.py
-          tests/integration/data_ops/test_data_ops_integration.py
-          tests/integration/migrations/test_reviewed_migrations_integration.py
-          tests/unit/test_postgres_matrix.py
-          tests/utils.py
-          FILES
-          sort -o /tmp/expected-files /tmp/expected-files
-          diff -u /tmp/expected-files /tmp/actual-files
+          allowed='^(\.github/workflows/(apply-postgres-compatibility|postgres-compatibility)\.yml|README\.md|docs/compatibility\.md|tests/conftest\.py|tests/integration/catalog/test_catalog_advanced_integration\.py|tests/integration/data_ops/test_data_ops_integration\.py|tests/integration/migrations/test_reviewed_migrations_integration\.py|tests/unit/test_postgres_matrix\.py|tests/utils\.py)$'
+          unexpected=$(grep -Ev "$allowed" /tmp/actual-files || true)
+          if [[ -n "$unexpected" ]]; then
+            printf 'Unexpected changed files:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          test "$(wc -l < /tmp/actual-files)" -eq 10
 
       - name: Commit validated compatibility slice
         env:
