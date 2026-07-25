@@ -31,22 +31,25 @@ def test_placeholder_scanner_preserves_doubled_quotes_and_lonely_dollar_prefix()
 
 def test_transaction_ast_traversal_skips_missing_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     class DefensiveNode:
-        __slots__ = ("missing", "children")
+        __slots__ = ("children", "missing")
 
         def __init__(self) -> None:
             self.children: tuple[Any, ...] = ()
 
     monkeypatch.setattr(transaction, "Node", DefensiveNode)
 
-    assert transaction._contains_nested_mutation(  # pyright: ignore[reportPrivateUsage]
-        DefensiveNode(),
-        root=object(),
-    ) is False
+    assert (
+        transaction._contains_nested_mutation(  # pyright: ignore[reportPrivateUsage]
+            DefensiveNode(),
+            root=object(),
+        )
+        is False
+    )
 
 
 def test_query_guard_ast_traversal_skips_missing_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     class DefensiveNode:
-        __slots__ = ("missing", "children")
+        __slots__ = ("children", "missing")
 
         def __init__(self) -> None:
             self.children: tuple[Any, ...] = ()
