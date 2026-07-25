@@ -18,6 +18,7 @@ Database credentials remain the final security boundary. Use a dedicated least-p
 - **Schema intelligence** — inspect schemas, tables, views, sequences, columns, constraints, indexes, comments, and extensions.
 - **Bounded SQL** — single-statement execution, native parameters, hard row limits, explicit truncation metadata, and precision-safe JSON encoding.
 - **Guarded transactions** — atomic multi-step transactions with isolation controls, timeouts, required mutation ceilings, optional exact row-count checks, and rollback-on-failure guarantees.
+- **Reviewed migrations** — deterministic plan hashes, conservative DDL classification, atomic schema/ledger commits, and latest-only rollback.
 - **Query plans** — inspect `EXPLAIN` plans and simulate hypothetical indexes with HypoPG.
 - **Index tuning** — analyze individual queries or a `pg_stat_statements` workload.
 - **Database health** — inspect index, connection, vacuum, sequence, replication, buffer, and constraint health.
@@ -161,6 +162,7 @@ The `get_server_capabilities` tool reports the effective profile, access mode, l
 | `--transport` | — | `stdio` |
 | `--query-timeout` | `QUERY_TIMEOUT` | `30` seconds |
 | `--max-rows` | `MAX_ROWS` | `100` |
+| `--migration-schema` | `MIGRATION_SCHEMA` | `public` |
 | `--sse-host` | `SSE_HOST` | `localhost` |
 | `--sse-port` | `SSE_PORT` | `8000` |
 | `--sse-path` | `SSE_PATH` | `/sse` |
@@ -195,6 +197,10 @@ Install extensions through a controlled migration or administrator workflow. Res
 | `get_postgres_type` | Resolve enum, domain, composite, range, multirange, array, and unknown types |
 | `execute_sql` | Execute one bounded, parameterized, read-only statement in every mode |
 | `execute_transaction` | Execute guarded steps atomically; unrestricted mode only |
+| `create_migration_plan` | Parse, classify, and hash ordered forward/rollback DDL without a database connection |
+| `apply_migration_plan` | Verify and atomically commit a reviewed transactional plan and ledger row |
+| `get_migration_status` | Return redacted trusted-ledger metadata |
+| `rollback_migration` | Roll back the latest reviewed migration atomically in reverse order |
 | `explain_query` | Inspect a validated read-only plan; `ANALYZE` is blocked in restricted mode |
 | `get_top_queries` | Analyze `pg_stat_statements` workload data |
 | `analyze_workload_indexes` | Recommend indexes for a workload |
@@ -211,7 +217,7 @@ uv run pyright
 uv run pytest -v
 ```
 
-Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), and the live OID-backed object model is documented in [docs/catalog.md](docs/catalog.md).
+Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), and the live OID-backed object model is documented in [docs/catalog.md](docs/catalog.md). Reviewed migration invariants are documented in [docs/migrations.md](docs/migrations.md).
 
 ## License
 

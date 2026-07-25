@@ -365,3 +365,13 @@ async def test_engine_url_connection():
         # Verify driver state
         assert driver.is_pool is True
         assert driver.conn is not None
+
+
+@pytest.mark.asyncio
+async def test_public_connection_context_reuses_driver_lifecycle(monkeypatch):
+    """Infrastructure adapters can pin one connection without using a private API."""
+    connection = object()
+    driver = SqlDriver(conn=connection)
+
+    async with driver.connection() as checked_out:
+        assert checked_out is connection

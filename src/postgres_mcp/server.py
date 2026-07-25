@@ -32,6 +32,12 @@ from .catalog_advanced import list_postgres_types_data  # noqa: E402
 from .catalog_advanced import list_relations_data  # noqa: E402
 from .catalog_advanced import search_catalog_data  # noqa: E402
 from .explain import ExplainPlanTool  # noqa: E402
+from .migrations import MigrationError  # noqa: E402
+from .migrations import MigrationExecutionError  # noqa: E402
+from .migrations import MigrationPlanner  # noqa: E402
+from .migrations import MigrationService  # noqa: E402
+from .migrations import MigrationStepDraft  # noqa: E402
+from .migrations import PostgresMigrationBackend  # noqa: E402
 from .runtime import ABSOLUTE_MAX_ROWS  # noqa: E402
 from .runtime import DEFAULT_LOCK_TIMEOUT_SECONDS  # noqa: E402
 from .runtime import DEFAULT_MAX_ROWS  # noqa: E402
@@ -76,6 +82,13 @@ class HypotheticalIndex(BaseModel):
     using: str = Field(default="btree", description="PostgreSQL index access method")
 
 
+class MigrationStepInput(BaseModel):
+    """One reviewed forward DDL statement and its compensating statement."""
+
+    sql: str = Field(description="Exactly one PostgreSQL migration statement")
+    rollback_sql: str = Field(description="Exactly one compensating PostgreSQL statement")
+
+
 class TransactionStepInput(BaseModel):
     """One guarded statement in an atomic transaction request."""
 
@@ -93,6 +106,8 @@ current_access_mode = AccessMode.RESTRICTED
 current_profile = ServerProfile.FULL
 current_query_timeout = DEFAULT_QUERY_TIMEOUT_SECONDS
 current_max_rows = DEFAULT_MAX_ROWS
+current_migration_schema = "public"
+migration_planner = MigrationPlanner()
 shutdown_in_progress = False
 
 
@@ -108,6 +123,11 @@ async def get_sql_driver() -> SqlDriver | SafeSqlDriver:
 def get_base_sql_driver() -> SqlDriver:
     """Return the driver used by bounded and transactional public APIs."""
     return SqlDriver(conn=db_connection)
+
+
+def get_migration_service() -> MigrationService:
+    """Build the reviewed migration application service for this database."""
+    return MigrationService(PostgresMigrationBackend(get_base_sql_driver(), ledger_schema=current_migration_schema))
 
 
 def format_text_response(text: Any) -> ResponseType:
@@ -157,6 +177,16 @@ async def get_server_capabilities() -> ResponseType:
                 "dynamic": True,
                 "supported_kinds": ["array", "base", "composite", "domain", "enum", "multirange", "pseudo", "range"],
                 "unknown_extension_types": "preserved_with_oid_and_tagged_value",
+            },
+            "migrations": {
+                "planning": True,
+                "apply_available": current_access_mode is AccessMode.UNRESTRICTED,
+                "review_hash_required": True,
+                "atomic_ledger": True,
+                "canonical_plan_ledger": True,
+                "rollback_policy_revalidated": True,
+                "ambiguous_commit_state_reported": True,
+                "non_transactional_apply": False,
             },
             "result_encoding": "lossless-tagged-json-fallback",
         }
@@ -345,6 +375,99 @@ async def get_postgres_type(
         )
     except Exception as exc:
         logger.exception("Error getting PostgreSQL type details")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Create a deterministic reviewed PostgreSQL migration plan without touching the database")
+async def create_migration_plan(
+    name: Annotated[str, Field(description="Stable migration name")],
+    steps: Annotated[list[MigrationStepInput], Field(description="Ordered forward and rollback statement pairs", min_length=1)],
+) -> ResponseType:
+    """Parse, classify, and hash a migration for human review."""
+    try:
+        plan = migration_planner.create_plan(
+            name=name,
+            steps=[MigrationStepDraft(step.sql, step.rollback_sql) for step in steps],
+        )
+        return format_text_response(plan.to_payload())
+    except (MigrationError, ValueError) as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected migration planning error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Apply a reviewed fully transactional migration and its ledger row atomically")
+async def apply_migration_plan(
+    name: Annotated[str, Field(description="Stable migration name")],
+    steps: Annotated[list[MigrationStepInput], Field(description="The exact reviewed ordered statement pairs", min_length=1)],
+    review_hash: Annotated[str, Field(description="Exact 64-character review hash from create_migration_plan")],
+    timeout_seconds: Annotated[int, Field(ge=1, le=900)] = 30,
+    lock_timeout_seconds: Annotated[int, Field(ge=1, le=300)] = 5,
+) -> ResponseType:
+    """Rebuild the reviewed aggregate and execute it on one transaction."""
+    if current_access_mode is not AccessMode.UNRESTRICTED:
+        return format_error_response("reviewed migration apply requires --access-mode=unrestricted")
+    try:
+        plan = migration_planner.create_plan(
+            name=name,
+            steps=[MigrationStepDraft(step.sql, step.rollback_sql) for step in steps],
+        )
+        result = await get_migration_service().apply(
+            plan,
+            review_hash=review_hash,
+            timeout_seconds=timeout_seconds,
+            lock_timeout_seconds=lock_timeout_seconds,
+        )
+        return format_text_response(result.to_payload())
+    except MigrationExecutionError as exc:
+        return format_text_response(exc.to_payload())
+    except (MigrationError, ValueError) as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected migration apply error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="List redacted reviewed migration ledger metadata")
+async def get_migration_status(
+    limit: Annotated[int, Field(description="Maximum migration rows", ge=1, le=500)] = 100,
+) -> ResponseType:
+    """Return bounded migration history without stored SQL text."""
+    try:
+        snapshot = await get_migration_service().status(limit=limit)
+        return format_text_response(snapshot.to_payload())
+    except (MigrationError, ValueError) as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected migration status error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Atomically roll back the latest reviewed migration using its stored verified plan")
+async def rollback_migration(
+    name: Annotated[str, Field(description="Applied migration name")],
+    review_hash: Annotated[str, Field(description="Exact review hash of the stored plan")],
+    timeout_seconds: Annotated[int, Field(ge=1, le=900)] = 30,
+    lock_timeout_seconds: Annotated[int, Field(ge=1, le=300)] = 5,
+) -> ResponseType:
+    """Execute stored compensating statements in reverse order on one transaction."""
+    if current_access_mode is not AccessMode.UNRESTRICTED:
+        return format_error_response("reviewed migration rollback requires --access-mode=unrestricted")
+    try:
+        result = await get_migration_service().rollback(
+            name=name,
+            review_hash=review_hash,
+            timeout_seconds=timeout_seconds,
+            lock_timeout_seconds=lock_timeout_seconds,
+        )
+        return format_text_response(result.to_payload())
+    except MigrationExecutionError as exc:
+        return format_text_response(exc.to_payload())
+    except (MigrationError, ValueError) as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected migration rollback error")
         return format_error_response(str(exc))
 
 
@@ -586,6 +709,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cors-allow-origins", default=None)
     parser.add_argument("--query-timeout", type=float, default=None)
     parser.add_argument("--max-rows", type=int, default=None)
+    parser.add_argument(
+        "--migration-schema",
+        default=os.environ.get("MIGRATION_SCHEMA", "public"),
+        help="Existing schema that owns the trusted reviewed-migration ledger",
+    )
     return parser
 
 
@@ -595,12 +723,14 @@ async def main() -> None:
 
     global current_access_mode
     global current_max_rows
+    global current_migration_schema
     global current_query_timeout
     current_access_mode = AccessMode(args.access_mode)
     current_query_timeout = (
         args.query_timeout if args.query_timeout is not None else float(env_number("QUERY_TIMEOUT", DEFAULT_QUERY_TIMEOUT_SECONDS, float))
     )
     current_max_rows = args.max_rows if args.max_rows is not None else int(env_number("MAX_ROWS", DEFAULT_MAX_ROWS, int))
+    current_migration_schema = args.migration_schema
     QueryLimits(
         timeout_seconds=current_query_timeout,
         default_max_rows=current_max_rows,

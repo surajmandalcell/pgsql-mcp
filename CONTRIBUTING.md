@@ -85,3 +85,6 @@ Harden bounded SQL execution
 ```
 
 A squash-merge message should describe the complete user-visible change, not an intermediate implementation step.
+## Migration-domain changes
+
+Treat reviewed migrations as a separate bounded context. Add or update planner, aggregate, application-service, adapter, MCP-boundary, and real-PostgreSQL tests before changing behavior. Never split DDL execution from ledger bookkeeping, bypass the review hash, weaken the trusted-ledger contract, or label a non-transactional operation rollback-safe.
