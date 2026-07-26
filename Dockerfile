@@ -1,64 +1,40 @@
-# First, build the application in the `/app` directory.
-# See `Dockerfile` for details.
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
-# Disable Python downloads, because we want to use the system interpreter
-# across both images. If using a managed Python version, it needs to be
-# copied from the build image into the final image; see `standalone.Dockerfile`
-# for an example.
-ENV UV_PYTHON_DOWNLOADS=0
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=0
 
 WORKDIR /app
-RUN apt-get update \
-  && apt-get install -y libpq-dev gcc \
-  && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml uv.lock README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-  --mount=type=bind,source=uv.lock,target=uv.lock \
-  --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-  uv sync --frozen --no-install-project --no-dev
-ADD . /app
+    uv sync --frozen --no-install-project --no-dev
+
+COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-  uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --no-editable
 
+FROM python:3.12-slim-bookworm AS runtime
 
-FROM python:3.12-slim-bookworm
-# It is important to use the image that matches the builder, as the path to the
-# Python executable must be the same, e.g., using `python:3.11-slim-bookworm`
-# will fail.
+RUN groupadd --gid 1000 app \
+    && useradd --uid 1000 --gid app --shell /bin/bash --create-home app
 
-# Create a non-root user for security
-RUN groupadd --gid 1000 app && \
-    useradd --uid 1000 --gid app --shell /bin/bash --create-home app
+WORKDIR /app
+COPY --from=builder --chown=app:app /app/.venv /app/.venv
+COPY --chown=app:app docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod 0555 /app/docker-entrypoint.sh
 
-COPY --from=builder --chown=app:app /app /app
-
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 ARG TARGETPLATFORM
-ARG BUILDPLATFORM
-LABEL org.opencontainers.image.description="pgsql-mcp - PostgreSQL MCP Server (${TARGETPLATFORM})"
-LABEL org.opencontainers.image.source="https://github.com/surajmandalcell/postgres-mcp"
-LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.vendor="surajmandalcell"
+LABEL org.opencontainers.image.description="pgsql-mcp - PostgreSQL MCP Server (${TARGETPLATFORM})" \
+      org.opencontainers.image.source="https://github.com/surajmandalcell/pgsql-mcp" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="surajmandalcell"
 
-# Install runtime system dependencies
-RUN apt-get update && apt-get install -y \
-  libpq-dev \
-  iputils-ping \
-  dnsutils \
-  net-tools \
-  && rm -rf /var/lib/apt/lists/*
-
-COPY docker-entrypoint.sh /app/
-RUN chmod +x /app/docker-entrypoint.sh
-
-# Expose the SSE port
+USER app
 EXPOSE 8000
-
-# Run the pgsql-mcp server
-# Users can pass a database URI or individual connection arguments:
-#   docker run -it --rm pgsql-mcp postgres://user:pass@host:port/dbname
-#   docker run -it --rm pgsql-mcp -h myhost -p 5432 -U myuser -d mydb
 ENTRYPOINT ["/app/docker-entrypoint.sh", "pgsql-mcp"]
 CMD []

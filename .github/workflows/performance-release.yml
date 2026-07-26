@@ -1,0 +1,68 @@
+name: Performance release budgets
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-budgets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Install complete dependency set
+        run: uv sync --frozen --all-extras
+
+      - name: Run release-budget unit contracts
+        run: uv run pytest -q tests/unit/quality/test_release_budgets.py
+
+      - name: Build wheel
+        run: uv build --wheel --out-dir dist
+
+      - name: Build minimal runtime image
+        run: docker build --tag pgsql-mcp:release-budget .
+
+      - name: Enforce release budgets
+        run: |
+          wheel=$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          uv run python scripts/check_release_budgets.py \
+            --wheel "$wheel" \
+            --image pgsql-mcp:release-budget \
+            --json-output release-budget-report.json
+
+      - name: Upload release-budget evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-budget-evidence
+          path: |
+            release-budget-report.json
+            dist/*.whl
+          if-no-files-found: warn
+          retention-days: 30
