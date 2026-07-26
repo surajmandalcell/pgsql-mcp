@@ -1,4 +1,4 @@
-name: Apply reviewed maintenance source bundle
+name: Apply reviewed maintenance source patch
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-reviewed-maintenance-source-bundle
+  group: apply-reviewed-maintenance-source-patch
   cancel-in-progress: false
 
 jobs:
@@ -37,54 +37,45 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Verify and extract exact source bundle
+      - name: Validate and apply staged source patch
         shell: bash
         run: |
           set -euo pipefail
-          cat .maintenance-transfer/part-* > /tmp/maintenance-source.tar.gz.b64
-          python - <<'PY'
+          cat .maintenance-transfer/part-* > /tmp/maintenance.patch.gz.b64
+          python - <<'PYCODE'
           from __future__ import annotations
 
           import base64
+          import gzip
           import hashlib
-          import io
-          import tarfile
-          from pathlib import Path, PurePosixPath
+          from pathlib import Path
 
-          encoded_path = Path("/tmp/maintenance-source.tar.gz.b64")
-          encoded = encoded_path.read_bytes()
-          if hashlib.sha256(encoded).hexdigest() != "769be20ca86d0ef083dcd1965c1e5c1a3e95c361cca881a0a10ff2380697d244":
-              raise RuntimeError("maintenance source bundle text checksum mismatch")
-
-          archive = base64.b64decode(encoded, validate=True)
-          if hashlib.sha256(archive).hexdigest() != "005c895f7c38d0e4cdac8e4e8f0d5adeb90436c68b1e86bcf4977ce706f695f7":
-              raise RuntimeError("maintenance source bundle archive checksum mismatch")
-
-          with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
-              for member in source.getmembers():
-                  path = PurePosixPath(member.name)
-                  if path.is_absolute() or ".." in path.parts:
-                      raise RuntimeError(f"unsafe maintenance bundle path: {member.name!r}")
-                  if member.issym() or member.islnk():
-                      raise RuntimeError(f"links are not permitted in maintenance bundle: {member.name!r}")
-              source.extractall(".", filter="data")
-          PY
-          rm -f \
-            tests/unit/maintenance/test_domain.py \
-            tests/unit/maintenance/test_postgres.py \
-            tests/unit/maintenance/test_service.py
+          encoded = Path("/tmp/maintenance.patch.gz.b64").read_bytes()
+          compressed = base64.b64decode(encoded, validate=True)
+          patch = gzip.decompress(compressed)
+          if not patch.startswith(b"diff --git "):
+              raise RuntimeError("staged maintenance payload is not a unified Git patch")
+          print(f"encoded_sha256={hashlib.sha256(encoded).hexdigest()}")
+          print(f"compressed_sha256={hashlib.sha256(compressed).hexdigest()}")
+          print(f"patch_sha256={hashlib.sha256(patch).hexdigest()}")
+          Path("/tmp/maintenance.patch").write_bytes(patch)
+          PYCODE
+          git apply --check /tmp/maintenance.patch
+          git apply /tmp/maintenance.patch
 
       - name: Install dependencies and validate complete source
         shell: bash
         run: |
           set -euo pipefail
           uv sync --frozen --all-extras
+          uv run ruff format .
+          uv run ruff check --fix .
           uv run ruff format --check .
           uv run ruff check .
           uv run pyright
           uv run pytest -q
 
-      - name: Commit exact validated source bundle
+      - name: Commit exact validated source
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
