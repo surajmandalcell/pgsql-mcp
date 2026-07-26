@@ -49,12 +49,53 @@ jobs:
       - name: Validate complete source and mutation gate
         shell: bash
         run: |
-          set -euo pipefail
-          uv run ruff format --check .
-          uv run ruff check .
-          uv run pyright
-          uv run pytest -q tests/unit/mutation/test_safety_mutations.py tests/unit/sql/test_results.py
-          uv run python tests/mutation/safety_mutations.py --output /tmp/mutation-results.json --timeout-seconds 180
+          set +e
+          set -o pipefail
+
+          uv run ruff format --check . 2>&1 | tee /tmp/mutation-ruff-format.txt
+          format_status=${PIPESTATUS[0]}
+
+          uv run ruff check . 2>&1 | tee /tmp/mutation-ruff-check.txt
+          lint_status=${PIPESTATUS[0]}
+
+          uv run pyright 2>&1 | tee /tmp/mutation-pyright.txt
+          pyright_status=${PIPESTATUS[0]}
+
+          uv run pytest -q tests/unit/mutation/test_safety_mutations.py tests/unit/sql/test_results.py \
+            2>&1 | tee /tmp/mutation-focused-pytest.txt
+          pytest_status=${PIPESTATUS[0]}
+
+          uv run python tests/mutation/safety_mutations.py \
+            --output /tmp/mutation-results.json \
+            --timeout-seconds 180 \
+            2>&1 | tee /tmp/mutation-gate.txt
+          mutation_status=${PIPESTATUS[0]}
+
+          printf 'format=%s\nlint=%s\npyright=%s\npytest=%s\nmutation=%s\n' \
+            "$format_status" "$lint_status" "$pyright_status" "$pytest_status" "$mutation_status" \
+            | tee /tmp/mutation-validation-status.txt
+
+          if [ "$format_status" -ne 0 ] || [ "$lint_status" -ne 0 ] || \
+             [ "$pyright_status" -ne 0 ] || [ "$pytest_status" -ne 0 ] || \
+             [ "$mutation_status" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Upload normalization evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: normalized-mutation-source-evidence
+          path: |
+            /tmp/mutation-ruff-format.txt
+            /tmp/mutation-ruff-check.txt
+            /tmp/mutation-pyright.txt
+            /tmp/mutation-focused-pytest.txt
+            /tmp/mutation-gate.txt
+            /tmp/mutation-results.json
+            /tmp/mutation-validation-status.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Commit exact normalized source
         env:
@@ -62,16 +103,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/normalize-mutation-source.yml
-          git add -A -- \
-            .github/workflows/normalize-mutation-source.yml \
-            tests/mutation \
-            tests/unit/mutation \
-            tests/unit/sql/test_results.py
+          git add -- tests/mutation tests/unit/mutation tests/unit/sql/test_results.py
           git diff --cached --check
           if [ -n "$(git diff --name-only)" ] || [ -n "$(git ls-files --others --exclude-standard)" ]; then
             git status --short
             exit 1
+          fi
+          if git diff --cached --quiet; then
+            echo 'No source normalization changes were required.'
+            exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
