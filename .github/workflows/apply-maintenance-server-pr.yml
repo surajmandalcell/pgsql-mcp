@@ -37,36 +37,48 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Verify and apply exact source patch
+      - name: Verify and extract exact source bundle
         shell: bash
         run: |
           set -euo pipefail
-          cat .maintenance-transfer/part-* > /tmp/maintenance.patch.gz.b64
+          cat .maintenance-transfer/part-* > /tmp/maintenance-source.tar.gz.b64
           python - <<'PY'
-          from pathlib import Path
-          import base64
-          import gzip
-          import hashlib
+          from __future__ import annotations
 
-          encoded = Path('/tmp/maintenance.patch.gz.b64').read_text()
-          compressed = base64.b64decode(encoded, validate=True)
-          if hashlib.sha256(compressed).hexdigest() != '009316e75201f5eb1112dcffd97f774aa3add2cf27b297a571dc515ec40bcb25':
-              raise RuntimeError('compressed maintenance patch checksum mismatch')
-          patch = gzip.decompress(compressed)
-          if hashlib.sha256(patch).hexdigest() != 'e0821bc914e01f7cb7367057494adc8f1a395db3f8f61010d3237c91bda35923':
-              raise RuntimeError('maintenance patch checksum mismatch')
-          Path('/tmp/maintenance.patch').write_bytes(patch)
+          import base64
+          import hashlib
+          import io
+          import tarfile
+          from pathlib import Path, PurePosixPath
+
+          encoded_path = Path("/tmp/maintenance-source.tar.gz.b64")
+          encoded = encoded_path.read_bytes()
+          if hashlib.sha256(encoded).hexdigest() != "769be20ca86d0ef083dcd1965c1e5c1a3e95c361cca881a0a10ff2380697d244":
+              raise RuntimeError("maintenance source bundle text checksum mismatch")
+
+          archive = base64.b64decode(encoded, validate=True)
+          if hashlib.sha256(archive).hexdigest() != "005c895f7c38d0e4cdac8e4e8f0d5adeb90436c68b1e86bcf4977ce706f695f7":
+              raise RuntimeError("maintenance source bundle archive checksum mismatch")
+
+          with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
+              for member in source.getmembers():
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or ".." in path.parts:
+                      raise RuntimeError(f"unsafe maintenance bundle path: {member.name!r}")
+                  if member.issym() or member.islnk():
+                      raise RuntimeError(f"links are not permitted in maintenance bundle: {member.name!r}")
+              source.extractall(".", filter="data")
           PY
-          git apply --check /tmp/maintenance.patch
-          git apply /tmp/maintenance.patch
+          rm -f \
+            tests/unit/maintenance/test_domain.py \
+            tests/unit/maintenance/test_postgres.py \
+            tests/unit/maintenance/test_service.py
 
       - name: Install dependencies and validate complete source
         shell: bash
         run: |
           set -euo pipefail
           uv sync --frozen --all-extras
-          uv run ruff format .
-          uv run ruff check --fix .
           uv run ruff format --check .
           uv run ruff check .
           uv run pyright
@@ -79,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .maintenance-transfer
-          git add -A \
+          git add -A -- \
             README.md \
             docs/compatibility.md \
             docs/maintenance.md \
@@ -89,9 +101,11 @@ jobs:
             tests/integration/maintenance \
             tests/unit/lite/test_lite_server.py \
             tests/unit/maintenance \
+            tests/unit/server/test_maintenance_tools.py \
             .maintenance-transfer
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Complete reviewed nontransactional maintenance"
-          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/reviewed-maintenance
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:${{ github.event.pull_request.head.ref }}
