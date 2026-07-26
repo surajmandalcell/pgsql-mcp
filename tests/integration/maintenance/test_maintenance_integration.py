@@ -122,9 +122,7 @@ async def test_target_oid_drift_is_rejected_before_execution(
     maintenance_context: tuple[SqlDriver, MaintenanceService],
 ) -> None:
     driver, service = maintenance_context
-    reviewed = await service.plan(
-        request("drifted-items", MaintenanceOperation.ANALYZE, "items")
-    )
+    reviewed = await service.plan(request("drifted-items", MaintenanceOperation.ANALYZE, "items"))
     await driver.execute_query(f"DROP TABLE {TEST_SCHEMA}.items CASCADE", force_readonly=False)
     await driver.execute_query(
         f"CREATE TABLE {TEST_SCHEMA}.items (id bigint PRIMARY KEY)",
@@ -132,9 +130,7 @@ async def test_target_oid_drift_is_rejected_before_execution(
     )
 
     with pytest.raises(MaintenanceReviewMismatch, match="review_hash"):
-        current = await service.plan(
-            request("drifted-items", MaintenanceOperation.ANALYZE, "items")
-        )
+        current = await service.plan(request("drifted-items", MaintenanceOperation.ANALYZE, "items"))
         await service.apply(
             current,
             review_hash=reviewed.review_hash,
@@ -148,9 +144,7 @@ async def test_status_is_redacted_and_unknown_outcome_requires_reconciliation(
     maintenance_context: tuple[SqlDriver, MaintenanceService],
 ) -> None:
     driver, service = maintenance_context
-    reviewed = await service.plan(
-        request("reconcile-items", MaintenanceOperation.ANALYZE, "items")
-    )
+    reviewed = await service.plan(request("reconcile-items", MaintenanceOperation.ANALYZE, "items"))
     await service.apply(
         reviewed,
         review_hash=reviewed.review_hash,

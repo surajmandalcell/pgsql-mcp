@@ -101,6 +101,7 @@ async def get_server_capabilities() -> ResponseType:
             "omitted": [
                 "writes",
                 "migrations",
+                "maintenance",
                 "index_advisor",
                 "workload_analysis",
                 "database_health",

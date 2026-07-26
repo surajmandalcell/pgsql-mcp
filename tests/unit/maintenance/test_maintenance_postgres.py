@@ -1,5 +1,7 @@
 """PostgreSQL-adapter contracts for reviewed maintenance."""
 
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import asyncio
@@ -155,13 +157,26 @@ def configure_apply(
     execute_error: BaseException | None = None,
 ) -> tuple[FakeConnection, FakeCursor, AsyncMock, AsyncMock]:
     cursor = FakeCursor(execute_error=execute_error)
-    connection = cast(FakeConnection, cast(FakeDriver, adapter.sql_driver)._connection)
+    connection = cast(FakeDriver, adapter.sql_driver)._connection
     connection._cursors = iter([cursor])
     finish = AsyncMock(return_value=record_row(plan, status=MaintenanceOperationStatus.SUCCEEDED))
     unknown = AsyncMock()
     monkeypatch.setattr(adapter, "_configure_session", AsyncMock())
     monkeypatch.setattr(adapter, "_acquire_lock", AsyncMock(return_value=True))
-    monkeypatch.setattr(adapter, "_inspect_on_connection", AsyncMock(return_value=snapshot(oid=plan.target_oid, kind=plan.target_kind, populated=bool(plan.preconditions["is_populated"]), unique_index=bool(plan.preconditions["has_usable_unique_index"]), exclusion_index=bool(plan.preconditions["is_exclusion_index"]))))
+    monkeypatch.setattr(
+        adapter,
+        "_inspect_on_connection",
+        AsyncMock(
+            return_value=snapshot(
+                oid=plan.target_oid,
+                kind=plan.target_kind,
+                populated=bool(plan.preconditions["is_populated"]),
+                unique_index=bool(plan.preconditions["has_usable_unique_index"]),
+                exclusion_index=bool(plan.preconditions["is_exclusion_index"]),
+            )
+        ),
+    )
+    monkeypatch.setattr(adapter, "_ledger_exists", AsyncMock(return_value=existing is not None))
     monkeypatch.setattr(adapter, "_ensure_ledger", AsyncMock())
     monkeypatch.setattr(adapter, "_validate_ledger", AsyncMock())
     monkeypatch.setattr(adapter, "_get_by_name", AsyncMock(return_value=existing))
@@ -269,9 +284,13 @@ async def test_apply_is_idempotent_for_a_succeeded_reviewed_plan(
         existing=existing,
     )
 
+    inspect = AsyncMock(return_value=snapshot(oid=99))
+    monkeypatch.setattr(adapter, "_inspect_on_connection", inspect)
+
     result = await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)
 
     assert result.status is MaintenanceOperationStatus.ALREADY_SUCCEEDED
+    inspect.assert_not_awaited()
     cursor.execute.assert_not_awaited()
     finish.assert_not_awaited()
 
@@ -371,6 +390,7 @@ async def test_apply_detects_target_drift_before_ledger_creation(
     adapter = backend(FakeConnection([]))
     monkeypatch.setattr(adapter, "_configure_session", AsyncMock())
     monkeypatch.setattr(adapter, "_acquire_lock", AsyncMock(return_value=True))
+    monkeypatch.setattr(adapter, "_ledger_exists", AsyncMock(return_value=False))
     monkeypatch.setattr(adapter, "_inspect_on_connection", AsyncMock(return_value=snapshot(oid=99)))
     monkeypatch.setattr(adapter, "_cleanup_session", AsyncMock(return_value=None))
     ensure = AsyncMock()
@@ -446,3 +466,25 @@ async def test_cleanup_failure_marks_pool_connection_invalid(
     await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)
 
     invalid.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_successful_command_with_failed_status_write_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = reviewed_plan()
+    adapter = backend(FakeConnection([]))
+    _connection, cursor, finish, _unknown = configure_apply(adapter, monkeypatch, plan=plan)
+    finish.side_effect = [RuntimeError("status write lost"), record_row(plan, status=MaintenanceOperationStatus.UNKNOWN)]
+
+    with pytest.raises(MaintenanceExecutionError, match="maintenance operation failed") as error:
+        await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)
+
+    cursor.execute.assert_awaited_once()
+    assert error.value.outcome == "unknown"
+    assert finish.await_args_list[-1].kwargs["status"] is MaintenanceOperationStatus.UNKNOWN
+
+
+def test_constructor_bounds_inspection_timeout() -> None:
+    with pytest.raises(ValueError, match="between 1 and 300"):
+        PostgresMaintenanceBackend(cast(SqlDriver, object()), inspection_timeout_seconds=0)

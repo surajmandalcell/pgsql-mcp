@@ -49,6 +49,15 @@ from .data_ops import SelectRowsRequest  # noqa: E402
 from .data_ops import UpdateRowsRequest  # noqa: E402
 from .data_ops import UpsertRowsRequest  # noqa: E402
 from .explain import ExplainPlanTool  # noqa: E402
+from .maintenance import MaintenanceError  # noqa: E402
+from .maintenance import MaintenanceExecutionError  # noqa: E402
+from .maintenance import MaintenanceOperation  # noqa: E402
+from .maintenance import MaintenanceOptions  # noqa: E402
+from .maintenance import MaintenanceRequest  # noqa: E402
+from .maintenance import MaintenanceService  # noqa: E402
+from .maintenance import MaintenanceTarget  # noqa: E402
+from .maintenance import PostgresMaintenanceBackend  # noqa: E402
+from .maintenance import ReconciliationResolution  # noqa: E402
 from .migrations import MigrationError  # noqa: E402
 from .migrations import MigrationExecutionError  # noqa: E402
 from .migrations import MigrationPlanner  # noqa: E402
@@ -146,6 +155,7 @@ current_profile = ServerProfile.FULL
 current_query_timeout = DEFAULT_QUERY_TIMEOUT_SECONDS
 current_max_rows = DEFAULT_MAX_ROWS
 current_migration_schema = "public"
+current_maintenance_schema = "public"
 migration_planner = MigrationPlanner()
 shutdown_in_progress = False
 
@@ -167,6 +177,17 @@ def get_base_sql_driver() -> SqlDriver:
 def get_migration_service() -> MigrationService:
     """Build the reviewed migration application service for this database."""
     return MigrationService(PostgresMigrationBackend(get_base_sql_driver(), ledger_schema=current_migration_schema))
+
+
+def get_maintenance_service() -> MaintenanceService:
+    """Build the reviewed nontransactional maintenance service."""
+    return MaintenanceService(
+        PostgresMaintenanceBackend(
+            get_base_sql_driver(),
+            ledger_schema=current_maintenance_schema,
+            inspection_timeout_seconds=max(1, int(current_query_timeout)),
+        )
+    )
 
 
 def get_data_service() -> DataService:
@@ -193,6 +214,28 @@ def _filter_set(value: FilterSetInput | None) -> FilterSet:
     return FilterSet(
         all_of=tuple(condition(item) for item in value.all),
         any_of=tuple(condition(item) for item in value.any),
+    )
+
+
+def _maintenance_request(
+    *,
+    name: str,
+    operation: str,
+    schema_name: str,
+    target_name: str,
+    skip_locked: bool,
+    index_cleanup: str,
+    parallel: int,
+) -> MaintenanceRequest:
+    return MaintenanceRequest(
+        name=name,
+        operation=MaintenanceOperation(operation),
+        target=MaintenanceTarget(schema_name, target_name),
+        options=MaintenanceOptions(
+            skip_locked=skip_locked,
+            index_cleanup=index_cleanup,
+            parallel=parallel,
+        ),
     )
 
 
@@ -253,6 +296,21 @@ async def get_server_capabilities() -> ResponseType:
                 "rollback_policy_revalidated": True,
                 "ambiguous_commit_state_reported": True,
                 "non_transactional_apply": False,
+            },
+            "maintenance": {
+                "planning": True,
+                "apply_available": current_access_mode is AccessMode.UNRESTRICTED,
+                "review_hash_required": True,
+                "transaction_behavior": "non_transactional",
+                "rollback_available": False,
+                "durable_status": ["running", "succeeded", "failed", "unknown"],
+                "unknown_outcome_reconciliation": True,
+                "supported_operations": [
+                    "vacuum_analyze",
+                    "analyze",
+                    "reindex_index_concurrently",
+                    "refresh_materialized_view_concurrently",
+                ],
             },
             "data_operations": {
                 "structured_filters": True,
@@ -679,6 +737,130 @@ async def rollback_migration(
         return format_error_response(str(exc))
 
 
+@mcp.tool(description="Create a reviewed nontransactional PostgreSQL maintenance plan")
+async def create_maintenance_plan(
+    name: Annotated[str, Field(description="Stable maintenance operation name")],
+    operation: Annotated[
+        Literal[
+            "vacuum_analyze",
+            "analyze",
+            "reindex_index_concurrently",
+            "refresh_materialized_view_concurrently",
+        ],
+        Field(description="Structured maintenance operation"),
+    ],
+    schema_name: Annotated[str, Field(description="Exact target schema")],
+    target_name: Annotated[str, Field(description="Exact relation or index name")],
+    skip_locked: Annotated[bool, Field(description="Skip relations that cannot be locked immediately")] = False,
+    index_cleanup: Annotated[Literal["auto", "on", "off"], Field(description="VACUUM index cleanup policy")] = "auto",
+    parallel: Annotated[int, Field(description="VACUUM parallel workers", ge=0, le=1024)] = 0,
+) -> ResponseType:
+    try:
+        request = _maintenance_request(
+            name=name,
+            operation=operation,
+            schema_name=schema_name,
+            target_name=target_name,
+            skip_locked=skip_locked,
+            index_cleanup=index_cleanup,
+            parallel=parallel,
+        )
+        return format_text_response((await get_maintenance_service().plan(request)).to_payload())
+    except (MaintenanceError, ValueError) as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected maintenance planning error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Apply an exact reviewed nontransactional maintenance plan")
+async def apply_maintenance_plan(
+    name: Annotated[str, Field(description="Stable maintenance operation name")],
+    operation: Annotated[
+        Literal[
+            "vacuum_analyze",
+            "analyze",
+            "reindex_index_concurrently",
+            "refresh_materialized_view_concurrently",
+        ],
+        Field(description="Structured maintenance operation"),
+    ],
+    schema_name: Annotated[str, Field(description="Exact target schema")],
+    target_name: Annotated[str, Field(description="Exact relation or index name")],
+    review_hash: Annotated[str, Field(description="Exact review hash returned by create_maintenance_plan")],
+    skip_locked: Annotated[bool, Field(description="Skip relations that cannot be locked immediately")] = False,
+    index_cleanup: Annotated[Literal["auto", "on", "off"], Field(description="VACUUM index cleanup policy")] = "auto",
+    parallel: Annotated[int, Field(description="VACUUM parallel workers", ge=0, le=1024)] = 0,
+    timeout_seconds: Annotated[int, Field(ge=1, le=7200)] = 300,
+    lock_timeout_seconds: Annotated[int, Field(ge=1, le=300)] = 5,
+) -> ResponseType:
+    if current_access_mode is not AccessMode.UNRESTRICTED:
+        return format_error_response("reviewed maintenance apply requires --access-mode=unrestricted")
+    try:
+        request = _maintenance_request(
+            name=name,
+            operation=operation,
+            schema_name=schema_name,
+            target_name=target_name,
+            skip_locked=skip_locked,
+            index_cleanup=index_cleanup,
+            parallel=parallel,
+        )
+        service = get_maintenance_service()
+        plan = await service.plan(request)
+        result = await service.apply(
+            plan,
+            review_hash=review_hash,
+            timeout_seconds=timeout_seconds,
+            lock_timeout_seconds=lock_timeout_seconds,
+        )
+        return format_text_response(result.to_payload())
+    except MaintenanceExecutionError as exc:
+        return format_text_response(exc.to_payload())
+    except (MaintenanceError, ValueError) as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected maintenance apply error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="List redacted reviewed maintenance status records")
+async def get_maintenance_status(
+    limit: Annotated[int, Field(description="Maximum status rows", ge=1, le=500)] = 100,
+) -> ResponseType:
+    try:
+        return format_text_response((await get_maintenance_service().status(limit=limit)).to_payload())
+    except (MaintenanceError, ValueError) as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected maintenance status error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Reconcile a reviewed maintenance operation after external outcome verification")
+async def reconcile_maintenance_operation(
+    name: Annotated[str, Field(description="Stable maintenance operation name")],
+    review_hash: Annotated[str, Field(description="Exact stored review hash")],
+    resolution: Annotated[Literal["succeeded", "failed"], Field(description="Externally verified outcome")],
+) -> ResponseType:
+    if current_access_mode is not AccessMode.UNRESTRICTED:
+        return format_error_response("maintenance reconciliation requires --access-mode=unrestricted")
+    try:
+        result = await get_maintenance_service().reconcile(
+            name=name,
+            review_hash=review_hash,
+            resolution=ReconciliationResolution(resolution),
+        )
+        return format_text_response(result.to_payload())
+    except MaintenanceExecutionError as exc:
+        return format_text_response(exc.to_payload())
+    except (MaintenanceError, ValueError) as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected maintenance reconciliation error")
+        return format_error_response(str(exc))
+
+
 @mcp.tool(description="Explain a SQL query and optionally simulate hypothetical indexes")
 async def explain_query(
     sql: Annotated[str, Field(description="SQL query to explain")],
@@ -922,6 +1104,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=os.environ.get("MIGRATION_SCHEMA", "public"),
         help="Existing schema that owns the trusted reviewed-migration ledger",
     )
+    parser.add_argument(
+        "--maintenance-schema",
+        default=os.environ.get("MAINTENANCE_SCHEMA", "public"),
+        help="Existing schema that owns the trusted reviewed-maintenance ledger",
+    )
     return parser
 
 
@@ -931,6 +1118,7 @@ async def main() -> None:
 
     global current_access_mode
     global current_max_rows
+    global current_maintenance_schema
     global current_migration_schema
     global current_query_timeout
     current_access_mode = AccessMode(args.access_mode)
@@ -939,6 +1127,7 @@ async def main() -> None:
     )
     current_max_rows = args.max_rows if args.max_rows is not None else int(env_number("MAX_ROWS", DEFAULT_MAX_ROWS, int))
     current_migration_schema = args.migration_schema
+    current_maintenance_schema = args.maintenance_schema
     QueryLimits(
         timeout_seconds=current_query_timeout,
         default_max_rows=current_max_rows,

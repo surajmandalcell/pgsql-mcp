@@ -19,6 +19,7 @@ Database credentials remain the final security boundary. Use a dedicated least-p
 - **Bounded SQL** — single-statement execution, native parameters, hard row limits, explicit truncation metadata, and precision-safe JSON encoding.
 - **Guarded transactions** — atomic multi-step transactions with isolation controls, timeouts, required mutation ceilings, optional exact row-count checks, and rollback-on-failure guarantees.
 - **Reviewed migrations** — deterministic plan hashes, conservative DDL classification, atomic schema/ledger commits, and latest-only rollback.
+- **Reviewed maintenance** — hash-bound nontransactional plans, target locks, durable status, and explicit unknown-outcome reconciliation.
 - **Typed data operations** — structured filters, keyset pagination, live catalog validation, and rollback-enforced mutation ceilings.
 - **Version compatibility** — core catalog, typed-data, and migration contracts exercised across PostgreSQL 14–18.
 - **Query plans** — inspect `EXPLAIN` plans and simulate hypothetical indexes with HypoPG.
@@ -165,6 +166,7 @@ The `get_server_capabilities` tool reports the effective profile, access mode, l
 | `--query-timeout` | `QUERY_TIMEOUT` | `30` seconds |
 | `--max-rows` | `MAX_ROWS` | `100` |
 | `--migration-schema` | `MIGRATION_SCHEMA` | `public` |
+| `--maintenance-schema` | `MAINTENANCE_SCHEMA` | `public` |
 | `--sse-host` | `SSE_HOST` | `localhost` |
 | `--sse-port` | `SSE_PORT` | `8000` |
 | `--sse-path` | `SSE_PATH` | `/sse` |
@@ -174,7 +176,7 @@ The full server's absolute result ceiling is 5,000 rows. The lite ceiling is 500
 
 ## PostgreSQL compatibility
 
-The dedicated compatibility matrix exercises the catalog, typed-data, and reviewed-migration bounded contexts against PostgreSQL 14, 15, 16, 17, and 18. The ordinary pull-request suite retains PostgreSQL 15 and 16 as its fast pair. See [docs/compatibility.md](docs/compatibility.md) for the support contract, local reproduction, deployment tiers, and extension tiers.
+The dedicated compatibility matrix exercises the catalog, typed-data, reviewed-migration, and reviewed-maintenance bounded contexts against PostgreSQL 14, 15, 16, 17, and 18. The ordinary pull-request suite retains PostgreSQL 15 and 16 as its fast pair. See [docs/compatibility.md](docs/compatibility.md) for the support contract, local reproduction, deployment tiers, and extension tiers.
 
 ## Optional PostgreSQL extensions
 
@@ -212,6 +214,10 @@ Install extensions through a controlled migration or administrator workflow. Res
 | `apply_migration_plan` | Verify and atomically commit a reviewed transactional plan and ledger row |
 | `get_migration_status` | Return redacted trusted-ledger metadata |
 | `rollback_migration` | Roll back the latest reviewed migration atomically in reverse order |
+| `create_maintenance_plan` | Inspect and hash a structured nontransactional maintenance request |
+| `apply_maintenance_plan` | Apply an exact reviewed maintenance plan; unrestricted mode only |
+| `get_maintenance_status` | Return redacted durable maintenance state |
+| `reconcile_maintenance_operation` | Resolve an unknown maintenance outcome after external verification |
 | `explain_query` | Inspect a validated read-only plan; `ANALYZE` is blocked in restricted mode |
 | `get_top_queries` | Analyze `pg_stat_statements` workload data |
 | `analyze_workload_indexes` | Recommend indexes for a workload |
@@ -228,7 +234,7 @@ uv run pyright
 uv run pytest -v
 ```
 
-Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), the live OID-backed object model in [docs/catalog.md](docs/catalog.md), reviewed migrations in [docs/migrations.md](docs/migrations.md), structured CRUD in [docs/data-operations.md](docs/data-operations.md), and the version support contract in [docs/compatibility.md](docs/compatibility.md).
+Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), the live OID-backed object model in [docs/catalog.md](docs/catalog.md), reviewed migrations in [docs/migrations.md](docs/migrations.md), structured CRUD in [docs/data-operations.md](docs/data-operations.md), reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), and the version support contract in [docs/compatibility.md](docs/compatibility.md).
 
 ## License
 

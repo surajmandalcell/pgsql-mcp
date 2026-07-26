@@ -70,6 +70,7 @@ async def test_lite_capabilities_are_small_and_read_only() -> None:
         "explain_query",
     ]
     assert "llm_features" in payload["omitted"]
+    assert "maintenance" in payload["omitted"]
 
 
 def test_lite_cli_has_no_write_mode() -> None:
@@ -136,3 +137,25 @@ def test_lite_pool_is_lazy_and_small() -> None:
     """The profile must not keep idle connections or permit broad fan-out."""
     assert lite.db_connection.min_size == 0
     assert lite.db_connection.max_size == 2
+
+
+def test_lite_server_import_does_not_load_maintenance_domain() -> None:
+    """The lite entry point must not import the operational maintenance stack."""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(filter(None, ["src", environment.get("PYTHONPATH")]))
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; import postgres_mcp.lite_server; "
+                "assert 'postgres_mcp.maintenance' not in sys.modules; "
+                "assert 'postgres_mcp.maintenance.postgres' not in sys.modules"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    assert completed.returncode == 0, completed.stderr

@@ -135,30 +135,35 @@ class PostgresMaintenanceBackend:
                         if not lock_acquired:
                             raise MaintenanceBusyError("another maintenance operation owns the target lock")
 
+                        ledger_exists = await self._ledger_exists(connection)
+                        existing: dict[str, Any] | None = None
+                        if ledger_exists:
+                            await self._validate_ledger(connection)
+                            existing = await self._get_by_name(connection, plan.name)
+                            if existing is not None:
+                                stored_plan = self._verified_plan(existing)
+                                if stored_plan.review_hash != plan.review_hash:
+                                    raise MaintenanceConflictError(
+                                        f"maintenance operation {plan.name!r} already exists with different reviewed content"
+                                    )
+                                existing_status = MaintenanceOperationStatus(str(existing["status"]))
+                                if existing_status in _TERMINAL_SUCCESS:
+                                    return MaintenanceOperationResult(
+                                        MaintenanceOperationStatus.ALREADY_SUCCEEDED,
+                                        _record_from_row(existing),
+                                    )
+                                if existing_status in {
+                                    MaintenanceOperationStatus.RUNNING,
+                                    MaintenanceOperationStatus.UNKNOWN,
+                                }:
+                                    raise MaintenanceConflictError(f"maintenance operation {plan.name!r} has an unresolved outcome")
+
                         snapshot = await self._inspect_on_connection(connection, plan.target)
                         self._verify_snapshot(plan, snapshot)
-                        await self._ensure_ledger(connection)
-                        await self._validate_ledger(connection)
-                        existing = await self._get_by_name(connection, plan.name)
+                        if not ledger_exists:
+                            await self._ensure_ledger(connection)
+                            await self._validate_ledger(connection)
                         if existing is not None:
-                            stored_plan = self._verified_plan(existing)
-                            if stored_plan.review_hash != plan.review_hash:
-                                raise MaintenanceConflictError(
-                                    f"maintenance operation {plan.name!r} already exists with different reviewed content"
-                                )
-                            existing_status = MaintenanceOperationStatus(str(existing["status"]))
-                            if existing_status in _TERMINAL_SUCCESS:
-                                return MaintenanceOperationResult(
-                                    MaintenanceOperationStatus.ALREADY_SUCCEEDED,
-                                    _record_from_row(existing),
-                                )
-                            if existing_status in {
-                                MaintenanceOperationStatus.RUNNING,
-                                MaintenanceOperationStatus.UNKNOWN,
-                            }:
-                                raise MaintenanceConflictError(
-                                    f"maintenance operation {plan.name!r} has an unresolved outcome"
-                                )
                             active_row = await self._restart_record(connection, plan)
                         else:
                             active_row = await self._insert_running_record(connection, plan)
@@ -190,9 +195,7 @@ class PostgresMaintenanceBackend:
                         error_code = _error_code(exc)
                         outcome = "unknown" if operation_completed else "failed"
                         if record_started:
-                            terminal_status = (
-                                MaintenanceOperationStatus.UNKNOWN if operation_completed else MaintenanceOperationStatus.FAILED
-                            )
+                            terminal_status = MaintenanceOperationStatus.UNKNOWN if operation_completed else MaintenanceOperationStatus.FAILED
                             try:
                                 await self._finish_record(
                                     connection,
@@ -300,9 +303,7 @@ class PostgresMaintenanceBackend:
                             raise MaintenanceConflictError(f"maintenance operation {name!r} does not exist")
                         stored_plan = self._verified_plan(row)
                         if stored_plan.review_hash != review_hash:
-                            raise MaintenanceReviewMismatch(
-                                "supplied review_hash does not match the stored maintenance plan"
-                            )
+                            raise MaintenanceReviewMismatch("supplied review_hash does not match the stored maintenance plan")
                         target_oid = stored_plan.target_oid
                         lock_acquired = await self._acquire_lock(connection, target_oid)
                         if not lock_acquired:

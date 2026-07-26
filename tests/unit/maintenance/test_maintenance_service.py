@@ -131,3 +131,28 @@ async def test_reconciliation_requires_exact_hash_and_explicit_resolution() -> N
             review_hash="bad",
             resolution=ReconciliationResolution.SUCCEEDED,
         )
+
+
+@pytest.mark.asyncio
+async def test_apply_timeouts_are_bounded_before_backend_access() -> None:
+    backend = AsyncMock(spec=MaintenanceBackend)
+    service = MaintenanceService(backend)
+    reviewed = MaintenancePlanner().create_plan(request(), snapshot())
+
+    invalid = [
+        (0, 1, "timeout_seconds"),
+        (7_201, 1, "timeout_seconds"),
+        (30, 0, "lock_timeout_seconds"),
+        (30, 301, "lock_timeout_seconds"),
+        (10, 11, "cannot exceed"),
+    ]
+    for timeout_seconds, lock_timeout_seconds, message in invalid:
+        with pytest.raises(ValueError, match=message):
+            await service.apply(
+                reviewed,
+                review_hash=reviewed.review_hash,
+                timeout_seconds=timeout_seconds,
+                lock_timeout_seconds=lock_timeout_seconds,
+            )
+
+    backend.apply.assert_not_awaited()
