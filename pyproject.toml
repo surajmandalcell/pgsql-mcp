@@ -33,6 +33,7 @@ packages = ["src/postgres_mcp"]
 [project.scripts]
 pgsql-mcp = "postgres_mcp:main"
 pgsql-mcp-lite = "postgres_mcp:lite_main"
+pgsql-mcp-ha = "postgres_mcp:ha_main"
 
 # [tool.pyright]
 # venvPath = "."
