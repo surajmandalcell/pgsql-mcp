@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout exact PR head without persisted credentials
+      - name: Checkout exact PR head
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -29,10 +29,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
-      - name: Start and verify Docker
-        shell: bash
+      - name: Start Docker
         run: |
           set -euo pipefail
           sudo service docker start || true
@@ -41,147 +40,21 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
-          version: "0.6.9"
+          version: '0.6.9'
 
-      - name: Verify and extract exact source bundle
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat .replication-transfer/part-* > /tmp/replication-source.tar.gz.b64
-          python - <<'PY'
-          from __future__ import annotations
-
-          import base64
-          import hashlib
-          import io
-          import os
-          import shutil
-          import tarfile
-          from pathlib import Path, PurePosixPath
-
-          encoded_path = Path('/tmp/replication-source.tar.gz.b64')
-          encoded = encoded_path.read_bytes()
-          if hashlib.sha256(encoded).hexdigest() != '7ebf35734355f7ee01b2e32dfb54b02371c7f429ee5fcee6daa090a93744cc0f':
-              raise RuntimeError('replication source Base64 checksum mismatch')
-          compressed = base64.b64decode(encoded, validate=True)
-          if hashlib.sha256(compressed).hexdigest() != '148ba7f90107558ba1a5ffcb2f40dd040d068b1e5c84fcf7a09607bc0bd34964':
-              raise RuntimeError('replication source archive checksum mismatch')
-
-          for target in (
-              Path('src/postgres_mcp/replication'),
-              Path('tests/unit/replication'),
-              Path('tests/unit/ha'),
-              Path('tests/integration/replication'),
-          ):
-              if target.is_dir():
-                  shutil.rmtree(target)
-              elif target.exists():
-                  target.unlink()
-
-          with tarfile.open(fileobj=io.BytesIO(compressed), mode='r:gz') as archive:
-              for member in archive.getmembers():
-                  normalized = PurePosixPath(member.name)
-                  if normalized.is_absolute() or '..' in normalized.parts:
-                      raise RuntimeError(f'unsafe archive path: {member.name}')
-                  if member.issym() or member.islnk() or member.isdev():
-                      raise RuntimeError(f'unsupported archive entry: {member.name}')
-                  if not (member.isfile() or member.isdir()):
-                      raise RuntimeError(f'unexpected archive entry: {member.name}')
-              archive.extractall(path='.', filter='data')
-          os.remove(encoded_path)
-          PY
-
-      - name: Guard recovery-only PostgreSQL functions
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          source_path = Path('src/postgres_mcp/replication/postgres.py')
-          source = source_path.read_text()
-          old = """    pg_catalog.pg_is_wal_replay_paused() AS replay_paused,
-              CASE WHEN pg_catalog.pg_is_in_recovery() THEN NULL ELSE pg_catalog.pg_current_wal_lsn()::text END AS current_wal_lsn,
-              pg_catalog.pg_last_wal_receive_lsn()::text AS received_wal_lsn,
-              pg_catalog.pg_last_wal_replay_lsn()::text AS replayed_wal_lsn,
-          """
-          new = """    CASE
-                  WHEN pg_catalog.pg_is_in_recovery() THEN pg_catalog.pg_is_wal_replay_paused()
-                  ELSE false
-              END AS replay_paused,
-              CASE WHEN pg_catalog.pg_is_in_recovery() THEN NULL ELSE pg_catalog.pg_current_wal_lsn()::text END AS current_wal_lsn,
-              CASE
-                  WHEN pg_catalog.pg_is_in_recovery() THEN pg_catalog.pg_last_wal_receive_lsn()::text
-                  ELSE NULL
-              END AS received_wal_lsn,
-              CASE
-                  WHEN pg_catalog.pg_is_in_recovery() THEN pg_catalog.pg_last_wal_replay_lsn()::text
-                  ELSE NULL
-              END AS replayed_wal_lsn,
-          """
-          if source.count(old) != 1:
-              raise RuntimeError('expected one unguarded replication metadata block')
-          source_path.write_text(source.replace(old, new, 1))
-
-          test_path = Path('tests/unit/replication/test_replication_postgres.py')
-          tests = test_path.read_text()
-          marker = '\ndef test_row_conversion_builds_complete_topology() -> None:\n'
-          contract = """
-
-          def test_metadata_query_guards_recovery_only_functions() -> None:
-              from postgres_mcp.replication.postgres import _METADATA_SQL
-
-              normalized = " ".join(_METADATA_SQL.split())
-              assert "WHEN pg_catalog.pg_is_in_recovery() THEN pg_catalog.pg_is_wal_replay_paused()" in normalized
-              assert "WHEN pg_catalog.pg_is_in_recovery() THEN pg_catalog.pg_last_wal_receive_lsn()::text" in normalized
-              assert "WHEN pg_catalog.pg_is_in_recovery() THEN pg_catalog.pg_last_wal_replay_lsn()::text" in normalized
-          """
-          if tests.count(marker) != 1:
-              raise RuntimeError('expected one replication row-conversion test marker')
-          test_path.write_text(tests.replace(marker, contract + marker, 1))
-          PY
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
-
-      - name: Normalize generated source
-        run: uv run ruff format src/postgres_mcp/replication tests/unit/replication
+      - name: Extract reviewed source
+        run: python .replication-transfer/publish.py
 
       - name: Validate complete source
         shell: bash
         run: |
-          set +e
-          set -o pipefail
-          uv run ruff format --check . 2>&1 | tee /tmp/replication-ruff-format.txt
-          format_status=${PIPESTATUS[0]}
-          uv run ruff check . 2>&1 | tee /tmp/replication-ruff-check.txt
-          lint_status=${PIPESTATUS[0]}
-          uv run pyright 2>&1 | tee /tmp/replication-pyright.txt
-          pyright_status=${PIPESTATUS[0]}
-          uv run pytest -q --junitxml=/tmp/replication-pytest.xml 2>&1 | tee /tmp/replication-pytest.txt
-          pytest_status=${PIPESTATUS[0]}
-          printf 'format=%s\nlint=%s\npyright=%s\npytest=%s\n' \
-            "$format_status" "$lint_status" "$pyright_status" "$pytest_status" \
-            | tee /tmp/replication-validation-status.txt
-          if [ "$format_status" -ne 0 ] || [ "$lint_status" -ne 0 ] || \
-             [ "$pyright_status" -ne 0 ] || [ "$pytest_status" -ne 0 ]; then
-            exit 1
-          fi
-
-      - name: Upload replication validation evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: replication-ha-source-validation
-          path: |
-            /tmp/replication-ruff-format.txt
-            /tmp/replication-ruff-check.txt
-            /tmp/replication-pyright.txt
-            /tmp/replication-pytest.txt
-            /tmp/replication-pytest.xml
-            /tmp/replication-validation-status.txt
-          if-no-files-found: warn
-          retention-days: 7
+          set -euo pipefail
+          uv sync --frozen --all-extras
+          uv run ruff format src/postgres_mcp/replication tests/unit/replication
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+          uv run pytest -q
 
       - name: Commit validated source files
         env:
@@ -189,6 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git restore --source=HEAD -- .github/workflows/postgres-compatibility.yml
           git add -- \
             README.md docs/compatibility.md docs/replication.md pyproject.toml \
             src/postgres_mcp/__init__.py src/postgres_mcp/ha_server.py \
@@ -200,7 +74,7 @@ jobs:
             git status --short
             exit 1
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Implement replication and HA diagnostics"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Implement replication and HA diagnostics'
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/replication-ha-readiness
