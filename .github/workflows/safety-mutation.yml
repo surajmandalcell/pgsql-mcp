@@ -1,0 +1,69 @@
+name: Safety mutation testing
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safety-mutation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Install project dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Run focused mutation suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf mutants
+          uv run --with 'mutmut==3.6.0' mutmut run 2>&1 | tee mutation-run.txt
+          uv run --with 'mutmut==3.6.0' mutmut results 2>&1 | tee mutation-results.txt
+
+      - name: Reject surviving or indeterminate mutants
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Eiq 'survived|no tests|suspicious|timeout|segfault|not checked' mutation-results.txt; then
+            echo 'Mutation gate failed: every selected safety mutant must be killed.' >&2
+            cat mutation-results.txt >&2
+            exit 1
+          fi
+
+      - name: Upload mutation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: safety-mutation-evidence
+          path: |
+            mutation-run.txt
+            mutation-results.txt
+          if-no-files-found: warn
+          retention-days: 30
