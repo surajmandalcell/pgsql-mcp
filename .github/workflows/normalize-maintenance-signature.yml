@@ -35,17 +35,20 @@ jobs:
 
           path = Path("src/postgres_mcp/maintenance/postgres.py")
           content = path.read_text()
-          old = '''    async def _finish_record(
-              self,
-              connection: Any,
-              *,
-              name: str,
-              status: MaintenanceOperationStatus,
-              error_code: str | None,
-          ) -> dict[str, Any]:
-          '''
-          new = '''    async def _finish_record(self, connection: Any, *, name: str, status: MaintenanceOperationStatus, error_code: str | None) -> dict[str, Any]:
-          '''
+          old = (
+              "    async def _finish_record(\n"
+              "        self,\n"
+              "        connection: Any,\n"
+              "        *,\n"
+              "        name: str,\n"
+              "        status: MaintenanceOperationStatus,\n"
+              "        error_code: str | None,\n"
+              "    ) -> dict[str, Any]:\n"
+          )
+          new = (
+              "    async def _finish_record(self, connection: Any, *, name: str, "
+              "status: MaintenanceOperationStatus, error_code: str | None) -> dict[str, Any]:\n"
+          )
           if content.count(old) != 1:
               raise RuntimeError("expected exactly one maintenance finalization signature")
           path.write_text(content.replace(old, new, 1))
