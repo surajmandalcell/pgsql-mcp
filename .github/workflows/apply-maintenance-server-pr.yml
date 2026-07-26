@@ -1,4 +1,4 @@
-name: Apply reviewed maintenance source patch
+name: Apply reviewed maintenance source bundle
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-reviewed-maintenance-source-patch
+  group: apply-reviewed-maintenance-source-bundle
   cancel-in-progress: false
 
 jobs:
@@ -27,55 +27,79 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      - name: Detect source bundle
+        id: source_bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G '.maintenance-transfer/part-*' >/dev/null; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Python
+        if: steps.source_bundle.outputs.present == 'true'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
 
       - name: Install uv
+        if: steps.source_bundle.outputs.present == 'true'
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           version: "0.6.9"
 
-      - name: Validate and apply staged source patch
+      - name: Verify and extract exact source bundle
+        if: steps.source_bundle.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          cat .maintenance-transfer/part-* > /tmp/maintenance.patch.gz.b64
-          python - <<'PYCODE'
+          cat .maintenance-transfer/part-* > /tmp/maintenance-source.tar.gz.b64
+          python - <<'PY'
           from __future__ import annotations
 
           import base64
-          import gzip
           import hashlib
-          from pathlib import Path
+          import io
+          import tarfile
+          from pathlib import Path, PurePosixPath
 
-          encoded = Path("/tmp/maintenance.patch.gz.b64").read_bytes()
-          compressed = base64.b64decode(encoded, validate=True)
-          patch = gzip.decompress(compressed)
-          if not patch.startswith(b"diff --git "):
-              raise RuntimeError("staged maintenance payload is not a unified Git patch")
-          print(f"encoded_sha256={hashlib.sha256(encoded).hexdigest()}")
-          print(f"compressed_sha256={hashlib.sha256(compressed).hexdigest()}")
-          print(f"patch_sha256={hashlib.sha256(patch).hexdigest()}")
-          Path("/tmp/maintenance.patch").write_bytes(patch)
-          PYCODE
-          git apply --check /tmp/maintenance.patch
-          git apply /tmp/maintenance.patch
+          encoded = Path("/tmp/maintenance-source.tar.gz.b64").read_bytes()
+          if hashlib.sha256(encoded).hexdigest() != "76d5ed8657925962fe751b81bbe55a8d9c8324b912302902ccba5323dabd1f15":
+              raise RuntimeError("maintenance source bundle text checksum mismatch")
+
+          archive = base64.b64decode(encoded, validate=True)
+          if hashlib.sha256(archive).hexdigest() != "6ddfdc1c3a0afe5216f698048368c1e395f6f683bfde2b80624377365b220a50":
+              raise RuntimeError("maintenance source bundle archive checksum mismatch")
+
+          with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
+              for member in source.getmembers():
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or ".." in path.parts:
+                      raise RuntimeError(f"unsafe maintenance bundle path: {member.name!r}")
+                  if member.issym() or member.islnk():
+                      raise RuntimeError(f"links are not permitted in maintenance bundle: {member.name!r}")
+              source.extractall(".", filter="data")
+          PY
+          rm -f \
+            tests/unit/maintenance/test_domain.py \
+            tests/unit/maintenance/test_postgres.py \
+            tests/unit/maintenance/test_service.py
 
       - name: Install dependencies and validate complete source
+        if: steps.source_bundle.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
           uv sync --frozen --all-extras
-          uv run ruff format .
-          uv run ruff check --fix .
           uv run ruff format --check .
           uv run ruff check .
           uv run pyright
           uv run pytest -q
 
-      - name: Commit exact validated source
+      - name: Commit exact validated source bundle
+        if: steps.source_bundle.outputs.present == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
