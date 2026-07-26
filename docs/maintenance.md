@@ -10,7 +10,7 @@ Maintenance is a separate bounded context from raw SQL, typed data operations, a
 4. Inspect `get_maintenance_status` for redacted durable state.
 5. When an execution outcome is `unknown`, verify PostgreSQL externally and call `reconcile_maintenance_operation` with the exact review hash and explicit outcome.
 
-Planning and status are available in restricted mode. Apply and reconciliation require `--access-mode=unrestricted` and a least-privilege role with only the required maintenance privileges.
+Planning and status are available in restricted mode. Apply and reconciliation require `--access-mode=unrestricted` and a least-privilege role with only the required maintenance privileges. The reliability-focused `pgsql-mcp-lite` profile intentionally omits every maintenance tool and does not import this bounded context.
 
 ## Supported operations
 
