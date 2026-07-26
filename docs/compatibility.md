@@ -14,7 +14,8 @@ Each major runs the following bounded-context integration contracts against a re
 
 - OID-backed catalog discovery, relation metadata, dynamic PostgreSQL types, partitions, policies, triggers, views, and materialized views;
 - typed guarded data operations, keyset pagination, generated-column protections, optimistic concurrency, affected-row rollback, and response-byte limits;
-- reviewed migration planning, atomic application, trusted-ledger validation, idempotence, conflicts, latest-only rollback, redaction, and failed-step rollback.
+- reviewed migration planning, atomic application, trusted-ledger validation, idempotence, conflicts, latest-only rollback, redaction, and failed-step rollback;
+- reviewed nontransactional maintenance planning, live target revalidation, advisory locking, durable status, exact-major behavior, and explicit unknown-outcome reconciliation.
 
 The ordinary pull-request suite retains PostgreSQL 15 and 16 as its fast pair. The dedicated matrix independently selects one image per job through `PGSQL_MCP_TEST_POSTGRES_IMAGE`, preventing accidental cross-version reuse.
 
@@ -27,7 +28,8 @@ PGSQL_MCP_TEST_POSTGRES_IMAGE=postgres:14 uv run pytest -v \
   tests/unit/test_postgres_matrix.py \
   tests/integration/catalog \
   tests/integration/data_ops \
-  tests/integration/migrations
+  tests/integration/migrations \
+  tests/integration/maintenance
 ```
 
 Accepted values are `postgres:14` through `postgres:18`. Unknown, preview, and end-of-life image values fail during test collection instead of silently weakening coverage.
