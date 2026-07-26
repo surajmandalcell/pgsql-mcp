@@ -65,6 +65,13 @@ def test_encode_json_native_scalars() -> None:
 
 
 def test_encode_lossy_numeric_boundaries() -> None:
+    json_safe_integer = 2**53 - 1
+    assert encode_postgres_value(json_safe_integer) == json_safe_integer
+    assert encode_postgres_value(-json_safe_integer) == -json_safe_integer
+    assert encode_postgres_value(json_safe_integer + 1) == {
+        "$pg_type": "integer",
+        "value": str(json_safe_integer + 1),
+    }
     assert encode_postgres_value(2**60) == {"$pg_type": "integer", "value": str(2**60)}
     assert encode_postgres_value(Decimal("123.4500")) == {"$pg_type": "numeric", "value": "123.4500"}
     assert encode_postgres_value(float("nan"))["value"] == "NaN"
