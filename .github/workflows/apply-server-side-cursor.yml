@@ -1,0 +1,382 @@
+name: Apply server-side bounded cursor
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-server-side-bounded-cursor
+  cancel-in-progress: false
+
+jobs:
+  apply-validate-commit:
+    if: github.event.pull_request.head.ref == 'feature/server-side-bounded-cursors' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Start Docker
+        run: |
+          set -euo pipefail
+          sudo service docker start || true
+          docker info
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: '0.6.9'
+
+      - name: Apply server-side cursor implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              source = target.read_text()
+              if source.count(old) != 1:
+                  raise RuntimeError(f'expected exactly one match in {path}: {old[:100]!r}')
+              target.write_text(source.replace(old, new, 1))
+
+          replace_once(
+              'src/postgres_mcp/sql/sql_driver.py',
+              'import re\n',
+              'import re\nimport secrets\n',
+          )
+
+          old = '''    async def _execute_bounded_with_connection(
+              self,
+              connection: Any,
+              query: LiteralString,
+              *,
+              params: list[Any] | None,
+              max_rows: int,
+              force_readonly: bool,
+              timeout_seconds: float | None,
+          ) -> BoundedQueryResult:
+              transaction_started = False
+              try:
+                  async with connection.cursor(row_factory=dict_row) as cursor:
+                      transaction_started = True
+                      await cursor.execute("BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION")
+                      if timeout_seconds is not None:
+                          timeout_ms = max(1, int(timeout_seconds * 1000))
+                          lock_timeout_ms = max(1, int(min(timeout_seconds, DEFAULT_LOCK_TIMEOUT_SECONDS) * 1000))
+                          await cursor.execute(
+                              "SELECT set_config('statement_timeout', %s, true)",
+                              [f"{timeout_ms}ms"],
+                          )
+                          await cursor.execute(
+                              "SELECT set_config('lock_timeout', %s, true)",
+                              [f"{lock_timeout_ms}ms"],
+                          )
+                          await cursor.execute(
+                              "SELECT set_config('idle_in_transaction_session_timeout', %s, true)",
+                              [f"{timeout_ms}ms"],
+                          )
+                      await cursor.execute("SELECT set_config('row_security', 'on', true)")
+                      await cursor.execute("SELECT set_config('search_path', 'pg_catalog, public', true)")
+
+                      if params:
+                          await cursor.execute(query, params)
+                      else:
+                          await cursor.execute(query)
+
+                      command = _command_name(query)
+                      affected_rows = _normalized_rowcount(getattr(cursor, "rowcount", None))
+                      if cursor.description is None:
+                          if force_readonly:
+                              await connection.rollback()
+                          else:
+                              await connection.commit()
+                          transaction_started = False
+                          return BoundedQueryResult(
+                              rows=[],
+                              columns=[],
+                              row_count=0,
+                              truncated=False,
+                              affected_rows=affected_rows,
+                              command=command,
+                          )
+
+                      fetched = await cursor.fetchmany(max_rows + 1)
+                      truncated = len(fetched) > max_rows
+                      visible_rows = fetched[:max_rows]
+                      rows = [dict(row) for row in visible_rows]
+                      columns = [column_info_from_description(item) for item in cursor.description]
+                      if force_readonly:
+                          await connection.rollback()
+                      else:
+                          await connection.commit()
+                      transaction_started = False
+                      return BoundedQueryResult(
+                          rows=rows,
+                          columns=columns,
+                          row_count=len(rows),
+                          truncated=truncated,
+                          affected_rows=affected_rows,
+                          command=command,
+                      )
+              except BaseException:
+                  if transaction_started:
+                      try:
+                          await connection.rollback()
+                      except Exception as rollback_error:
+                          logger.error("Error rolling back bounded query: %s", rollback_error)
+                  raise
+
+          '''
+
+          new = '''    async def _configure_bounded_transaction(
+              self,
+              cursor: Any,
+              *,
+              read_only: bool,
+              timeout_seconds: float | None,
+          ) -> None:
+              await cursor.execute("BEGIN TRANSACTION READ ONLY" if read_only else "BEGIN TRANSACTION")
+              if timeout_seconds is not None:
+                  timeout_ms = max(1, int(timeout_seconds * 1000))
+                  lock_timeout_ms = max(1, int(min(timeout_seconds, DEFAULT_LOCK_TIMEOUT_SECONDS) * 1000))
+                  await cursor.execute(
+                      "SELECT set_config('statement_timeout', %s, true)",
+                      [f"{timeout_ms}ms"],
+                  )
+                  await cursor.execute(
+                      "SELECT set_config('lock_timeout', %s, true)",
+                      [f"{lock_timeout_ms}ms"],
+                  )
+                  await cursor.execute(
+                      "SELECT set_config('idle_in_transaction_session_timeout', %s, true)",
+                      [f"{timeout_ms}ms"],
+                  )
+              await cursor.execute("SELECT set_config('row_security', 'on', true)")
+              await cursor.execute("SELECT set_config('search_path', 'pg_catalog, public', true)")
+
+          @staticmethod
+          def _bounded_result(cursor: Any, query: LiteralString, rows: list[dict[str, Any]], *, truncated: bool) -> BoundedQueryResult:
+              description = cursor.description or ()
+              return BoundedQueryResult(
+                  rows=rows,
+                  columns=[column_info_from_description(item) for item in description],
+                  row_count=len(rows),
+                  truncated=truncated,
+                  affected_rows=_normalized_rowcount(getattr(cursor, "rowcount", None)),
+                  command=_command_name(query),
+              )
+
+          async def _execute_readonly_bounded_with_connection(
+              self,
+              connection: Any,
+              query: LiteralString,
+              *,
+              params: list[Any] | None,
+              max_rows: int,
+              timeout_seconds: float | None,
+          ) -> BoundedQueryResult:
+              transaction_started = False
+              try:
+                  async with connection.cursor(row_factory=dict_row) as control_cursor:
+                      transaction_started = True
+                      await self._configure_bounded_transaction(
+                          control_cursor,
+                          read_only=True,
+                          timeout_seconds=timeout_seconds,
+                      )
+
+                  cursor_name = f"pgsql_mcp_{secrets.token_hex(8)}"
+                  async with connection.cursor(name=cursor_name, row_factory=dict_row) as cursor:
+                      if params:
+                          await cursor.execute(query, params)
+                      else:
+                          await cursor.execute(query)
+
+                      fetched = await cursor.fetchmany(max_rows + 1) if cursor.description is not None else []
+                      visible_rows = [dict(row) for row in fetched[:max_rows]]
+                      result = self._bounded_result(
+                          cursor,
+                          query,
+                          visible_rows,
+                          truncated=len(fetched) > max_rows,
+                      )
+
+                  await connection.rollback()
+                  transaction_started = False
+                  return result
+              except BaseException:
+                  if transaction_started:
+                      try:
+                          await connection.rollback()
+                      except Exception as rollback_error:
+                          logger.error("Error rolling back bounded query: %s", rollback_error)
+                  raise
+
+          async def _execute_bounded_with_connection(
+              self,
+              connection: Any,
+              query: LiteralString,
+              *,
+              params: list[Any] | None,
+              max_rows: int,
+              force_readonly: bool,
+              timeout_seconds: float | None,
+          ) -> BoundedQueryResult:
+              if force_readonly:
+                  return await self._execute_readonly_bounded_with_connection(
+                      connection,
+                      query,
+                      params=params,
+                      max_rows=max_rows,
+                      timeout_seconds=timeout_seconds,
+                  )
+
+              transaction_started = False
+              try:
+                  async with connection.cursor(row_factory=dict_row) as cursor:
+                      transaction_started = True
+                      await self._configure_bounded_transaction(
+                          cursor,
+                          read_only=False,
+                          timeout_seconds=timeout_seconds,
+                      )
+                      if params:
+                          await cursor.execute(query, params)
+                      else:
+                          await cursor.execute(query)
+
+                      if cursor.description is None:
+                          result = self._bounded_result(cursor, query, [], truncated=False)
+                      else:
+                          fetched = await cursor.fetchmany(max_rows + 1)
+                          visible_rows = [dict(row) for row in fetched[:max_rows]]
+                          result = self._bounded_result(
+                              cursor,
+                              query,
+                              visible_rows,
+                              truncated=len(fetched) > max_rows,
+                          )
+
+                  await connection.commit()
+                  transaction_started = False
+                  return result
+              except BaseException:
+                  if transaction_started:
+                      try:
+                          await connection.rollback()
+                      except Exception as rollback_error:
+                          logger.error("Error rolling back bounded query: %s", rollback_error)
+                  raise
+
+          '''
+          replace_once('src/postgres_mcp/sql/sql_driver.py', old, new)
+
+          test_path = Path('tests/unit/sql/test_bounded_driver.py')
+          tests = test_path.read_text()
+          old_read = '''    cursor = make_cursor(
+                  rows=[{"value": 1}, {"value": 2}],
+                  description=[Description()],
+              )
+              connection = make_connection(cursor)
+              driver = SqlDriver(conn=connection)
+          '''
+          new_read = '''    control = make_cursor()
+              cursor = make_cursor(
+                  rows=[{"value": 1}, {"value": 2}],
+                  description=[Description()],
+              )
+              connection = make_connection(control, cursor)
+              driver = SqlDriver(conn=connection)
+          '''
+          if tests.count(old_read) != 1:
+              raise RuntimeError('expected one legacy bounded read setup')
+          tests = tests.replace(old_read, new_read, 1)
+          tests = tests.replace('    cursor.execute.assert_any_await("BEGIN TRANSACTION READ ONLY")\n', '    control.execute.assert_any_await("BEGIN TRANSACTION READ ONLY")\n', 1)
+          tests = tests.replace('    cursor.execute.assert_any_await(\n        "SELECT set_config(\'statement_timeout\', %s, true)",\n', '    control.execute.assert_any_await(\n        "SELECT set_config(\'statement_timeout\', %s, true)",\n', 1)
+          tests = tests.replace('    cursor.execute.assert_any_await(\n        "SELECT set_config(\'lock_timeout\', %s, true)",\n', '    control.execute.assert_any_await(\n        "SELECT set_config(\'lock_timeout\', %s, true)",\n', 1)
+          tests = tests.replace('    cursor.execute.assert_any_await("SELECT set_config(\'row_security\', \'on\', true)")\n', '    control.execute.assert_any_await("SELECT set_config(\'row_security\', \'on\', true)")\n', 1)
+          tests = tests.replace('    cursor.execute.assert_any_await("SELECT set_config(\'search_path\', \'pg_catalog, public\', true)")\n', '    control.execute.assert_any_await("SELECT set_config(\'search_path\', \'pg_catalog, public\', true)")\n', 1)
+
+          old_failure = '''    failure_cursor = make_cursor(execute_error=RuntimeError("database failure"))
+              failure_connection = make_connection(failure_cursor)
+          '''
+          new_failure = '''    failure_control = make_cursor()
+              failure_cursor = make_cursor(execute_error=RuntimeError("database failure"))
+              failure_connection = make_connection(failure_control, failure_cursor)
+          '''
+          if tests.count(old_failure) != 1:
+              raise RuntimeError('expected one legacy failure setup')
+          tests = tests.replace(old_failure, new_failure, 1)
+
+          old_cancel = '''    cancelled_cursor = make_cursor(execute_error=asyncio.CancelledError())
+              cancelled_connection = make_connection(cancelled_cursor)
+          '''
+          new_cancel = '''    cancelled_control = make_cursor()
+              cancelled_cursor = make_cursor(execute_error=asyncio.CancelledError())
+              cancelled_connection = make_connection(cancelled_control, cancelled_cursor)
+          '''
+          if tests.count(old_cancel) != 1:
+              raise RuntimeError('expected one legacy cancellation setup')
+          tests = tests.replace(old_cancel, new_cancel, 1)
+          test_path.write_text(tests)
+          PY
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Normalize and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run ruff format \
+            src/postgres_mcp/sql/sql_driver.py \
+            tests/unit/sql/test_bounded_driver.py \
+            tests/unit/sql/test_server_side_bounded_cursor.py \
+            tests/integration/sql/test_server_side_bounded_cursor.py
+          uv run ruff check --fix \
+            src/postgres_mcp/sql/sql_driver.py \
+            tests/unit/sql/test_bounded_driver.py \
+            tests/unit/sql/test_server_side_bounded_cursor.py \
+            tests/integration/sql/test_server_side_bounded_cursor.py
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+          uv run pytest -q
+
+      - name: Commit validated source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- \
+            src/postgres_mcp/sql/sql_driver.py \
+            tests/unit/sql/test_bounded_driver.py \
+            tests/unit/sql/test_server_side_bounded_cursor.py \
+            tests/integration/sql/test_server_side_bounded_cursor.py
+          git diff --cached --check
+          if [ -n "$(git diff --name-only)" ] || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            git status --short
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Use server-side cursors for bounded reads'
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/server-side-bounded-cursors
