@@ -32,9 +32,7 @@ jobs:
           from pathlib import Path
           path = Path('src/postgres_mcp/observability.py')
           source = path.read_text()
-          old = '''        if not isinstance(payload, dict):
-              continue
-          '''
+          old = "        if not isinstance(payload, dict):\n            continue\n"
           if source.count(old) != 1:
               raise RuntimeError('expected one redundant JSON object check')
           path.write_text(source.replace(old, '', 1))
