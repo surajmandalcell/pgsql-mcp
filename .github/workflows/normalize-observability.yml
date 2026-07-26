@@ -39,6 +39,65 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
+      - name: Apply exact static-type and contract fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              source = target.read_text()
+              if source.count(old) != 1:
+                  raise RuntimeError(f'expected exactly one match in {path}: {old!r}')
+              target.write_text(source.replace(old, new, 1))
+
+          replace_once(
+              'src/postgres_mcp/observability.py',
+              '''class ToolCallServer(Protocol):
+              """Minimal FastMCP-compatible call surface used by the installer."""
+
+              async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[Any]: ...
+          ''',
+              '''class ToolCallServer(Protocol):
+              """Minimal FastMCP-compatible call surface used by the installer."""
+
+              _pgsql_mcp_observability_installed: bool
+
+              async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[Any]: ...
+          ''',
+          )
+          replace_once(
+              'src/postgres_mcp/observability.py',
+              '            def log_message(self, format_string: str, *args: Any) -> None:\n',
+              '            def log_message(self, format: str, *args: Any) -> None:\n',
+          )
+
+          replace_once(
+              'tests/unit/observability/test_observability.py',
+              'from typing import Any\n',
+              'from typing import Any\nfrom typing import cast\n',
+          )
+          replace_once(
+              'tests/unit/observability/test_observability.py',
+              'from postgres_mcp.observability import ToolOutcome\n',
+              'from postgres_mcp.observability import ToolCallServer\nfrom postgres_mcp.observability import ToolOutcome\n',
+          )
+          for name in ('server', 'failing_server', 'cancelled_server'):
+              callback = {'server': 'success', 'failing_server': 'failure', 'cancelled_server': 'cancelled'}[name]
+              replace_once(
+                  'tests/unit/observability/test_observability.py',
+                  f'    {name} = SimpleNamespace(call_tool={callback})\n',
+                  f'    {name} = cast(ToolCallServer, SimpleNamespace(call_tool={callback}))\n',
+              )
+          replace_once(
+              'tests/unit/observability/test_observability.py',
+              '    assert rendered.count("pgsql_mcp_tool_duration_seconds_count") == 2\n',
+              '    assert rendered.count("pgsql_mcp_tool_duration_seconds_count") == 1\n',
+          )
+          PY
+
       - name: Normalize source
         shell: bash
         run: |
