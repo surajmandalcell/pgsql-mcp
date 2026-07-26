@@ -266,10 +266,7 @@ def main() -> int:
     args.output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n")
     print(
         json.dumps(
-            {
-                key: evidence[key]
-                for key in ("mutation_count", "killed", "survivors", "infrastructure_errors", "passed")
-            },
+            {key: evidence[key] for key in ("mutation_count", "killed", "survivors", "infrastructure_errors", "passed")},
             sort_keys=True,
         )
     )
