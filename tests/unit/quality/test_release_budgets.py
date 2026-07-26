@@ -9,6 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from postgres_mcp import release_budgets
 from postgres_mcp.release_budgets import ImportMeasurement
 from postgres_mcp.release_budgets import ReleaseBudgetLimits
 from postgres_mcp.release_budgets import ReleaseMeasurements
@@ -44,6 +45,25 @@ def test_release_limits_and_measurements_reject_nonpositive_values() -> None:
         ReleaseBudgetLimits(core_process_ms=0)
     with pytest.raises(ValueError, match="wheel_bytes"):
         measurements(wheel_bytes=0)
+    with pytest.raises(ValueError, match="image_bytes"):
+        measurements(image_bytes=0)
+
+
+def test_default_command_runner_enforces_checked_captured_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completed = subprocess.CompletedProcess(["echo", "ok"], 0, stdout="ok\n", stderr="")
+    run = Mock(return_value=completed)
+    monkeypatch.setattr(release_budgets.subprocess, "run", run)
+
+    assert release_budgets._run_command(["echo", "ok"], env={"A": "B"}) is completed
+    run.assert_called_once_with(
+        ["echo", "ok"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={"A": "B"},
+    )
 
 
 def test_budget_evaluator_accepts_bounded_lazy_artifacts() -> None:
@@ -119,6 +139,10 @@ def test_cold_import_and_artifact_inputs_are_validated(tmp_path: Path) -> None:
         measure_wheel_bytes(tmp_path / "missing.whl")
 
     wheel = tmp_path / "package.whl"
+    wheel.touch()
+    with pytest.raises(ValueError, match="must not be empty"):
+        measure_wheel_bytes(wheel)
+
     wheel.write_bytes(b"wheel")
     assert measure_wheel_bytes(wheel) == 5
 
@@ -127,6 +151,13 @@ def test_docker_image_size_parses_and_rejects_invalid_output() -> None:
     runner = Mock(return_value=subprocess.CompletedProcess([], 0, stdout="12345\n", stderr=""))
     assert measure_docker_image_bytes("pgsql-mcp:test", runner=runner) == 12345
 
+    with pytest.raises(ValueError, match="image must not be empty"):
+        measure_docker_image_bytes(" ", runner=runner)
+
     runner.return_value = subprocess.CompletedProcess([], 0, stdout="not-a-size", stderr="")
     with pytest.raises(ValueError, match="invalid size"):
+        measure_docker_image_bytes("pgsql-mcp:test", runner=runner)
+
+    runner.return_value = subprocess.CompletedProcess([], 0, stdout="0", stderr="")
+    with pytest.raises(ValueError, match="must be positive"):
         measure_docker_image_bytes("pgsql-mcp:test", runner=runner)
