@@ -1,0 +1,63 @@
+name: Safety mutation gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: safety-mutation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Install complete dependency set
+        run: uv sync --frozen --all-extras
+
+      - name: Validate mutation tooling and numeric boundary regression
+        run: uv run pytest -q tests/unit/mutation/test_safety_mutations.py tests/unit/sql/test_results.py
+
+      - name: Kill every declared safety mutant
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python tests/mutation/safety_mutations.py \
+            --output mutation-results.json \
+            --timeout-seconds 180 \
+            2>&1 | tee mutation-output.txt
+
+      - name: Upload mutation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: safety-mutation-evidence
+          path: |
+            mutation-results.json
+            mutation-output.txt
+          if-no-files-found: warn
+          retention-days: 30
