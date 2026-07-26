@@ -20,6 +20,7 @@ Database credentials remain the final security boundary. Use a dedicated least-p
 - **Guarded transactions** — atomic multi-step transactions with isolation controls, timeouts, required mutation ceilings, optional exact row-count checks, and rollback-on-failure guarantees.
 - **Reviewed migrations** — deterministic plan hashes, conservative DDL classification, atomic schema/ledger commits, and latest-only rollback.
 - **Reviewed maintenance** — hash-bound nontransactional plans, target locks, durable status, and explicit unknown-outcome reconciliation.
+- **Replication and HA readiness** — secret-free physical/logical topology, slot retention, standby lag, and deterministic failover findings.
 - **Typed data operations** — structured filters, keyset pagination, live catalog validation, and rollback-enforced mutation ceilings.
 - **Version compatibility** — core catalog, typed-data, and migration contracts exercised across PostgreSQL 14–18.
 - **Query plans** — inspect `EXPLAIN` plans and simulate hypothetical indexes with HypoPG.
@@ -37,6 +38,17 @@ DATABASE_URI='postgresql://readonly_user:password@localhost:5432/app' \
 ```
 
 The lite profile exposes six tools, has no write-mode switch, caps results at 500 rows, keeps zero warm connections, and limits the pool to two connections. It does not import or advertise migrations, health suites, workload analysis, index advisors, extension management, or LLM features. See [docs/lite.md](docs/lite.md) for the exact contract and MCP configuration.
+
+## HA diagnostics profile
+
+`pgsql-mcp-ha` is a focused, read-only entry point for replication topology and failover readiness. It keeps zero warm connections, caps each replication catalog at 100 rows, never selects subscription connection strings or WAL-receiver `conninfo`, and exposes only three tools:
+
+```bash
+DATABASE_URI='postgresql://monitor_user:password@localhost:5432/app' \
+  uvx pgsql-mcp-ha
+```
+
+Use a least-privilege monitoring role. The profile reports physical senders, physical/logical slots, WAL receiver state, logical subscriptions and publications, replay lag, visibility gaps, and answer-first readiness findings. See [docs/replication.md](docs/replication.md) for privileges, thresholds, and operational interpretation.
 
 LLM-backed index analysis is an optional install and is not part of the core or lite dependency set:
 
@@ -218,6 +230,8 @@ Install extensions through a controlled migration or administrator workflow. Res
 | `apply_maintenance_plan` | Apply an exact reviewed maintenance plan; unrestricted mode only |
 | `get_maintenance_status` | Return redacted durable maintenance state |
 | `reconcile_maintenance_operation` | Resolve an unknown maintenance outcome after external verification |
+| `get_replication_topology` | Capture secret-free physical and logical replication topology in the HA profile |
+| `assess_failover_readiness` | Return deterministic lag, receiver, slot, subscription, and visibility findings in the HA profile |
 | `explain_query` | Inspect a validated read-only plan; `ANALYZE` is blocked in restricted mode |
 | `get_top_queries` | Analyze `pg_stat_statements` workload data |
 | `analyze_workload_indexes` | Recommend indexes for a workload |
@@ -234,7 +248,7 @@ uv run pyright
 uv run pytest -v
 ```
 
-Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), the live OID-backed object model in [docs/catalog.md](docs/catalog.md), reviewed migrations in [docs/migrations.md](docs/migrations.md), structured CRUD in [docs/data-operations.md](docs/data-operations.md), reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), and the version support contract in [docs/compatibility.md](docs/compatibility.md).
+Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), the live OID-backed object model in [docs/catalog.md](docs/catalog.md), reviewed migrations in [docs/migrations.md](docs/migrations.md), structured CRUD in [docs/data-operations.md](docs/data-operations.md), reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), replication and HA diagnostics in [docs/replication.md](docs/replication.md), and the version support contract in [docs/compatibility.md](docs/compatibility.md).
 
 ## License
 

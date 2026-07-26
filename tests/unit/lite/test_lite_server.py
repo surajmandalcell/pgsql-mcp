@@ -39,7 +39,7 @@ def test_package_import_does_not_eagerly_load_servers() -> None:
             (
                 "import sys; import postgres_mcp; "
                 "assert 'postgres_mcp.server' not in sys.modules; "
-                "assert 'postgres_mcp.lite_server' not in sys.modules; "
+                "assert 'postgres_mcp.lite_server' not in sys.modules; assert 'postgres_mcp.ha_server' not in sys.modules; "
                 "assert 'postgres_mcp.top_queries' not in sys.modules"
             ),
         ],
@@ -71,6 +71,7 @@ async def test_lite_capabilities_are_small_and_read_only() -> None:
     ]
     assert "llm_features" in payload["omitted"]
     assert "maintenance" in payload["omitted"]
+    assert "replication" in payload["omitted"]
 
 
 def test_lite_cli_has_no_write_mode() -> None:

@@ -102,6 +102,7 @@ async def get_server_capabilities() -> ResponseType:
                 "writes",
                 "migrations",
                 "maintenance",
+                "replication",
                 "index_advisor",
                 "workload_analysis",
                 "database_health",

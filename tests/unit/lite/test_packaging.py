@@ -29,7 +29,7 @@ def test_llm_stack_is_available_as_an_explicit_extra() -> None:
     assert optional["llm"] == ["instructor>=1.7.9"]
 
 
-def test_both_console_entry_points_are_published() -> None:
+def test_all_console_entry_points_are_published() -> None:
     """The full and lite profiles must ship from one versioned distribution."""
     project = project_configuration()
     scripts = project["scripts"]
@@ -37,4 +37,5 @@ def test_both_console_entry_points_are_published() -> None:
     assert scripts == {
         "pgsql-mcp": "postgres_mcp:main",
         "pgsql-mcp-lite": "postgres_mcp:lite_main",
+        "pgsql-mcp-ha": "postgres_mcp:ha_main",
     }
