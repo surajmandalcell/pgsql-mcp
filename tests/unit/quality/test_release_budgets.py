@@ -9,7 +9,6 @@ from unittest.mock import Mock
 
 import pytest
 
-from postgres_mcp import release_budgets
 from postgres_mcp.release_budgets import ImportMeasurement
 from postgres_mcp.release_budgets import ReleaseBudgetLimits
 from postgres_mcp.release_budgets import ReleaseMeasurements
@@ -49,21 +48,13 @@ def test_release_limits_and_measurements_reject_nonpositive_values() -> None:
         measurements(image_bytes=0)
 
 
-def test_default_command_runner_enforces_checked_captured_text(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    completed = subprocess.CompletedProcess(["echo", "ok"], 0, stdout="ok\n", stderr="")
-    run = Mock(return_value=completed)
-    monkeypatch.setattr(release_budgets.subprocess, "run", run)
+def test_default_command_runner_executes_a_real_isolated_probe() -> None:
+    result = measure_cold_import("json", repetitions=1)
 
-    assert release_budgets._run_command(["echo", "ok"], env={"A": "B"}) is completed
-    run.assert_called_once_with(
-        ["echo", "ok"],
-        check=True,
-        capture_output=True,
-        text=True,
-        env={"A": "B"},
-    )
+    assert result.module == "json"
+    assert result.process_ms > 0
+    assert result.import_ms >= 0
+    assert result.rss_mib > 0
 
 
 def test_budget_evaluator_accepts_bounded_lazy_artifacts() -> None:
