@@ -16,6 +16,7 @@ Database credentials remain the final security boundary. Use a dedicated least-p
 ## Features
 
 - **Schema intelligence** — inspect schemas, tables, views, sequences, columns, constraints, indexes, comments, and extensions.
+- **Extension profiles** — inventory known and unknown installed extensions with honest catalog, type, and specialized-tool support tiers.
 - **Bounded SQL** — single-statement execution, native parameters, hard row limits, explicit truncation metadata, and precision-safe JSON encoding.
 - **Guarded transactions** — atomic multi-step transactions with isolation controls, timeouts, required mutation ceilings, optional exact row-count checks, and rollback-on-failure guarantees.
 - **Reviewed migrations** — deterministic plan hashes, conservative DDL classification, atomic schema/ledger commits, and latest-only rollback.
@@ -198,6 +199,7 @@ Install extensions through a controlled migration or administrator workflow. Res
 | `list_objects` | List tables, views, sequences, or extensions |
 | `get_object_details` | Inspect columns, constraints, indexes, and comments |
 | `get_server_info` | Report PostgreSQL version, role, recovery, locale, and extensions |
+| `get_extension_profiles` | List bounded installed or available extension capability profiles |
 | `search_catalog` | Search relations, routines, types, collations, and extensions |
 | `list_relations` | List every PostgreSQL relation class with storage and RLS metadata |
 | `get_relation_details` | Inspect columns, OIDs, constraints, indexes, triggers, policies, partitions, and grants |
@@ -234,7 +236,7 @@ uv run pyright
 uv run pytest -v
 ```
 
-Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), the live OID-backed object model in [docs/catalog.md](docs/catalog.md), reviewed migrations in [docs/migrations.md](docs/migrations.md), structured CRUD in [docs/data-operations.md](docs/data-operations.md), reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), and the version support contract in [docs/compatibility.md](docs/compatibility.md).
+Changes follow the single-maintainer lifecycle in [CONTRIBUTING.md](CONTRIBUTING.md). The execution architecture and invariants are documented in [docs/architecture/execution-safety.md](docs/architecture/execution-safety.md), the live OID-backed object model in [docs/catalog.md](docs/catalog.md), reviewed migrations in [docs/migrations.md](docs/migrations.md), structured CRUD in [docs/data-operations.md](docs/data-operations.md), reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), extension profiles in [docs/extensions.md](docs/extensions.md), and the version support contract in [docs/compatibility.md](docs/compatibility.md).
 
 ## License
 

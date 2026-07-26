@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+
 from typing_extensions import LiteralString
 
 from .sql import BoundedQueryResult

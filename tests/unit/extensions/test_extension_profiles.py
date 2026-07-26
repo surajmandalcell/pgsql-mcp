@@ -51,42 +51,6 @@ def test_classify_extension_rejects_invalid_catalog_names(value: object) -> None
         classify_extension(value)  # type: ignore[arg-type]
 
 
-def test_snapshot_payload_reports_installed_available_and_support_contracts() -> None:
-    driver = AsyncMock()
-    driver.execute_bounded_query.side_effect = [
-        result(
-            [
-                {
-                    "name": "hypopg",
-                    "installed_version": "1.4.1",
-                    "default_version": "1.4.1",
-                    "schema_name": "public",
-                    "comment": "Hypothetical indexes",
-                },
-                {
-                    "name": "postgis",
-                    "installed_version": "3.5.0",
-                    "default_version": "3.5.0",
-                    "schema_name": "extensions",
-                    "comment": "Spatial types",
-                },
-            ]
-        ),
-        result(
-            [
-                {"name": "future_extension", "default_version": "9.1", "comment": None},
-                {"name": "postgis", "default_version": "3.5.0", "comment": "duplicate available row"},
-                {"name": "vector", "default_version": "0.8.0", "comment": "Vector type"},
-            ],
-            truncated=True,
-        ),
-    ]
-    repository = PostgresExtensionProfileRepository(driver, timeout_seconds=4.5)
-
-    snapshot = pytest.run(async_fn=repository.snapshot(include_available=True)) if False else None
-    assert snapshot is None
-
-
 @pytest.mark.asyncio
 async def test_repository_builds_bounded_installed_and_available_profiles() -> None:
     driver = AsyncMock()
@@ -248,10 +212,7 @@ async def test_repository_caps_combined_inventory_with_installed_profiles_first(
             "comment": None,
         }
     ]
-    available_rows = [
-        {"name": f"extension_{index:03d}", "default_version": "1", "comment": None}
-        for index in range(MAX_EXTENSION_PROFILES)
-    ]
+    available_rows = [{"name": f"extension_{index:03d}", "default_version": "1", "comment": None} for index in range(MAX_EXTENSION_PROFILES)]
     driver = AsyncMock()
     driver.execute_bounded_query.side_effect = [result(installed_rows), result(available_rows)]
 

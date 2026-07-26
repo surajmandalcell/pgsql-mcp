@@ -96,10 +96,7 @@ def test_lite_profile_does_not_import_extension_profile_domain() -> None:
         [
             sys.executable,
             "-c",
-            (
-                "import sys; import postgres_mcp.lite_server; "
-                "assert 'postgres_mcp.extension_profiles' not in sys.modules"
-            ),
+            ("import sys; import postgres_mcp.lite_server; assert 'postgres_mcp.extension_profiles' not in sys.modules"),
         ],
         check=False,
         capture_output=True,
