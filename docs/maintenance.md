@@ -23,7 +23,9 @@ There is no raw SQL parameter and no maintenance rollback tool. The planner vali
 
 ## Durable state and locking
 
-Each apply uses a session-level advisory lock scoped to the target OID. The durable ledger records `running`, `succeeded`, `failed`, or `unknown` state. A cancellation, timeout, connection loss, or status-write failure after execution begins can produce an unknown outcome; callers must reconcile rather than blindly retry.
+Each apply uses a session-level advisory lock scoped to the reviewed target OID. The durable ledger records `running`, `succeeded`, `failed`, or `unknown` state. A cancellation, timeout, connection loss, or status-write failure after execution begins can produce an unknown outcome; callers must reconcile rather than blindly retry.
+
+An exact replay of a successfully recorded review hash is idempotent and returns the stored success without executing PostgreSQL again. This is important for operations such as concurrent reindexing, which can legitimately replace the physical index OID after the reviewed operation succeeds.
 
 The adapter validates ledger ownership, persistence, relation kind, columns, RLS state, triggers, and rules before trusting stored plans. Status payloads expose identifiers, hashes, operation, target, timestamps, state, and a redacted error code—never raw SQL or database exception details.
 
