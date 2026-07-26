@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
+from dataclasses import field
 from enum import Enum
 from types import MappingProxyType
 from typing import Any
@@ -27,7 +28,7 @@ class MaintenanceValidationError(MaintenanceError, ValueError):
     """Raised when a structured maintenance request violates an invariant."""
 
 
-class MaintenanceReviewMismatch(MaintenanceError):
+class MaintenanceReviewMismatch(MaintenanceError):  # noqa: N818
     """Raised when the supplied review hash does not identify the plan."""
 
 
@@ -105,19 +106,17 @@ def _checked_identifier(value: str, *, label: str) -> str:
     return value
 
 
-def _checked_name(value: str) -> str:
+def validate_maintenance_name(value: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise MaintenanceValidationError("maintenance name must not be empty")
     if "\x00" in value:
         raise MaintenanceValidationError("maintenance name must not contain NUL")
     if len(value) > MAX_MAINTENANCE_NAME_CHARACTERS:
-        raise MaintenanceValidationError(
-            f"maintenance name cannot exceed {MAX_MAINTENANCE_NAME_CHARACTERS} characters"
-        )
+        raise MaintenanceValidationError(f"maintenance name cannot exceed {MAX_MAINTENANCE_NAME_CHARACTERS} characters")
     return value
 
 
-def _checked_review_hash(value: str) -> str:
+def normalize_maintenance_review_hash(value: str) -> str:
     normalized = value.lower()
     if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
         raise ValueError("review_hash must be a 64-character lowercase hexadecimal digest")
@@ -175,10 +174,10 @@ class MaintenanceRequest:
     name: str
     operation: MaintenanceOperation
     target: MaintenanceTarget
-    options: MaintenanceOptions = MaintenanceOptions()
+    options: MaintenanceOptions = field(default_factory=MaintenanceOptions)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "name", _checked_name(self.name))
+        object.__setattr__(self, "name", validate_maintenance_name(self.name))
         try:
             object.__setattr__(self, "operation", MaintenanceOperation(self.operation))
         except ValueError as exc:
@@ -237,7 +236,7 @@ class MaintenancePlan:
     plan_version: int = PLAN_VERSION
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "name", _checked_name(self.name))
+        object.__setattr__(self, "name", validate_maintenance_name(self.name))
         object.__setattr__(self, "operation", MaintenanceOperation(self.operation))
         if not isinstance(self.target, MaintenanceTarget):
             raise MaintenanceValidationError("target must be a MaintenanceTarget")
@@ -253,7 +252,7 @@ class MaintenancePlan:
             raise MaintenanceValidationError("reviewed maintenance must be classified as non_transactional")
         object.__setattr__(self, "preconditions", MappingProxyType(dict(self.preconditions)))
         object.__setattr__(self, "warnings", tuple(str(item) for item in self.warnings))
-        object.__setattr__(self, "review_hash", _checked_review_hash(self.review_hash))
+        object.__setattr__(self, "review_hash", normalize_maintenance_review_hash(self.review_hash))
         if self.plan_version != PLAN_VERSION:
             raise MaintenanceValidationError(f"unsupported maintenance plan version: {self.plan_version}")
 
