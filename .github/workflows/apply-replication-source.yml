@@ -2,8 +2,7 @@ name: Apply replication and HA source bundle
 
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -64,18 +63,16 @@ jobs:
           encoded = encoded_path.read_bytes()
           if hashlib.sha256(encoded).hexdigest() != '7ebf35734355f7ee01b2e32dfb54b02371c7f429ee5fcee6daa090a93744cc0f':
               raise RuntimeError('replication source Base64 checksum mismatch')
-
           compressed = base64.b64decode(encoded, validate=True)
           if hashlib.sha256(compressed).hexdigest() != '148ba7f90107558ba1a5ffcb2f40dd040d068b1e5c84fcf7a09607bc0bd34964':
               raise RuntimeError('replication source archive checksum mismatch')
 
-          targets = (
+          for target in (
               Path('src/postgres_mcp/replication'),
               Path('tests/unit/replication'),
               Path('tests/unit/ha'),
               Path('tests/integration/replication'),
-          )
-          for target in targets:
+          ):
               if target.is_dir():
                   shutil.rmtree(target)
               elif target.exists():
@@ -91,7 +88,6 @@ jobs:
                   if not (member.isfile() or member.isdir()):
                       raise RuntimeError(f'unexpected archive entry: {member.name}')
               archive.extractall(path='.', filter='data')
-
           os.remove(encoded_path)
           PY
 
@@ -148,28 +144,25 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
+      - name: Normalize generated source
+        run: uv run ruff format src/postgres_mcp/replication tests/unit/replication
+
       - name: Validate complete source
         shell: bash
         run: |
           set +e
           set -o pipefail
-
           uv run ruff format --check . 2>&1 | tee /tmp/replication-ruff-format.txt
           format_status=${PIPESTATUS[0]}
-
           uv run ruff check . 2>&1 | tee /tmp/replication-ruff-check.txt
           lint_status=${PIPESTATUS[0]}
-
           uv run pyright 2>&1 | tee /tmp/replication-pyright.txt
           pyright_status=${PIPESTATUS[0]}
-
           uv run pytest -q --junitxml=/tmp/replication-pytest.xml 2>&1 | tee /tmp/replication-pytest.txt
           pytest_status=${PIPESTATUS[0]}
-
           printf 'format=%s\nlint=%s\npyright=%s\npytest=%s\n' \
             "$format_status" "$lint_status" "$pyright_status" "$pytest_status" \
             | tee /tmp/replication-validation-status.txt
-
           if [ "$format_status" -ne 0 ] || [ "$lint_status" -ne 0 ] || \
              [ "$pyright_status" -ne 0 ] || [ "$pytest_status" -ne 0 ]; then
             exit 1
@@ -198,32 +191,20 @@ jobs:
           set -euo pipefail
           rm -rf .replication-transfer
           rm .github/workflows/apply-replication-source.yml
-
           git add -A -- \
             .github/workflows/apply-replication-source.yml \
             .github/workflows/postgres-compatibility.yml \
             .replication-transfer \
-            README.md \
-            docs/compatibility.md \
-            docs/replication.md \
-            pyproject.toml \
-            src/postgres_mcp/__init__.py \
-            src/postgres_mcp/ha_server.py \
-            src/postgres_mcp/lite_server.py \
-            src/postgres_mcp/replication \
-            tests/integration/replication \
-            tests/unit/ha \
-            tests/unit/lite/test_lite_server.py \
-            tests/unit/lite/test_packaging.py \
-            tests/unit/replication
-
+            README.md docs/compatibility.md docs/replication.md pyproject.toml \
+            src/postgres_mcp/__init__.py src/postgres_mcp/ha_server.py \
+            src/postgres_mcp/lite_server.py src/postgres_mcp/replication \
+            tests/integration/replication tests/unit/ha tests/unit/replication \
+            tests/unit/lite/test_lite_server.py tests/unit/lite/test_packaging.py
           git diff --cached --check
           if [ -n "$(git diff --name-only)" ] || [ -n "$(git ls-files --others --exclude-standard)" ]; then
-            echo 'Unexpected unstaged or untracked files remain:'
             git status --short
             exit 1
           fi
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Implement replication and HA diagnostics"
