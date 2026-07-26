@@ -87,6 +87,104 @@ jobs:
             tests/unit/maintenance/test_postgres.py \
             tests/unit/maintenance/test_service.py
 
+          # A successful REINDEX CONCURRENTLY replaces the index relation and OID.
+          # Exact-plan replay must consult the durable success record before
+          # revalidating the now-replaced live target.
+          python - <<'PY'
+          from pathlib import Path
+
+          backend_path = Path("src/postgres_mcp/maintenance/postgres.py")
+          backend = backend_path.read_text()
+          old_backend = '''                        snapshot = await self._inspect_on_connection(connection, plan.target)
+                        self._verify_snapshot(plan, snapshot)
+                        await self._ensure_ledger(connection)
+                        await self._validate_ledger(connection)
+                        existing = await self._get_by_name(connection, plan.name)
+                        if existing is not None:
+                            stored_plan = self._verified_plan(existing)
+                            if stored_plan.review_hash != plan.review_hash:
+                                raise MaintenanceConflictError(
+                                    f"maintenance operation {plan.name!r} already exists with different reviewed content"
+                                )
+                            existing_status = MaintenanceOperationStatus(str(existing["status"]))
+                            if existing_status in _TERMINAL_SUCCESS:
+                                return MaintenanceOperationResult(
+                                    MaintenanceOperationStatus.ALREADY_SUCCEEDED,
+                                    _record_from_row(existing),
+                                )
+                            if existing_status in {
+                                MaintenanceOperationStatus.RUNNING,
+                                MaintenanceOperationStatus.UNKNOWN,
+                            }:
+                                raise MaintenanceConflictError(
+                                    f"maintenance operation {plan.name!r} has an unresolved outcome"
+                                )
+                            active_row = await self._restart_record(connection, plan)
+                        else:
+                            active_row = await self._insert_running_record(connection, plan)
+'''
+          new_backend = '''                        ledger_exists = await self._ledger_exists(connection)
+                        existing: dict[str, Any] | None = None
+                        if ledger_exists:
+                            await self._validate_ledger(connection)
+                            existing = await self._get_by_name(connection, plan.name)
+                            if existing is not None:
+                                stored_plan = self._verified_plan(existing)
+                                if stored_plan.review_hash != plan.review_hash:
+                                    raise MaintenanceConflictError(
+                                        f"maintenance operation {plan.name!r} already exists with different reviewed content"
+                                    )
+                                existing_status = MaintenanceOperationStatus(str(existing["status"]))
+                                if existing_status in _TERMINAL_SUCCESS:
+                                    return MaintenanceOperationResult(
+                                        MaintenanceOperationStatus.ALREADY_SUCCEEDED,
+                                        _record_from_row(existing),
+                                    )
+                                if existing_status in {
+                                    MaintenanceOperationStatus.RUNNING,
+                                    MaintenanceOperationStatus.UNKNOWN,
+                                }:
+                                    raise MaintenanceConflictError(
+                                        f"maintenance operation {plan.name!r} has an unresolved outcome"
+                                    )
+
+                        snapshot = await self._inspect_on_connection(connection, plan.target)
+                        self._verify_snapshot(plan, snapshot)
+                        if not ledger_exists:
+                            await self._ensure_ledger(connection)
+                            await self._validate_ledger(connection)
+                        if existing is not None:
+                            active_row = await self._restart_record(connection, plan)
+                        else:
+                            active_row = await self._insert_running_record(connection, plan)
+'''
+          if backend.count(old_backend) != 1:
+              raise RuntimeError("expected exactly one maintenance apply block to patch")
+          backend_path.write_text(backend.replace(old_backend, new_backend, 1))
+
+          test_path = Path("tests/unit/maintenance/test_maintenance_postgres.py")
+          tests = test_path.read_text()
+          old_test = '''    result = await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)
+
+    assert result.status is MaintenanceOperationStatus.ALREADY_SUCCEEDED
+    cursor.execute.assert_not_awaited()
+    finish.assert_not_awaited()
+'''
+          new_test = '''    inspect = AsyncMock(return_value=snapshot(oid=99))
+    monkeypatch.setattr(adapter, "_inspect_on_connection", inspect)
+
+    result = await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)
+
+    assert result.status is MaintenanceOperationStatus.ALREADY_SUCCEEDED
+    inspect.assert_not_awaited()
+    cursor.execute.assert_not_awaited()
+    finish.assert_not_awaited()
+'''
+          if tests.count(old_test) != 1:
+              raise RuntimeError("expected exactly one maintenance idempotency test block to patch")
+          test_path.write_text(tests.replace(old_test, new_test, 1))
+          PY
+
       - name: Install dependencies
         if: steps.source_bundle.outputs.present == 'true'
         run: uv sync --frozen --all-extras
