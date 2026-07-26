@@ -68,11 +68,12 @@ def make_connection(*cursors: MagicMock) -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_bounded_read_only_query_rolls_back_and_truncates() -> None:
+    control = make_cursor()
     cursor = make_cursor(
         rows=[{"value": 1}, {"value": 2}],
         description=[Description()],
     )
-    connection = make_connection(cursor)
+    connection = make_connection(control, cursor)
     driver = SqlDriver(conn=connection)
 
     result = await driver.execute_bounded_query(
@@ -88,18 +89,18 @@ async def test_bounded_read_only_query_rolls_back_and_truncates() -> None:
     assert result.row_count == 1
     assert result.truncated is True
     assert result.command == "SELECT"
-    cursor.execute.assert_any_await("BEGIN TRANSACTION READ ONLY")
-    cursor.execute.assert_any_await(
+    control.execute.assert_any_await("BEGIN TRANSACTION READ ONLY")
+    control.execute.assert_any_await(
         "SELECT set_config('statement_timeout', %s, true)",
         ["2500ms"],
     )
-    cursor.execute.assert_any_await(
+    control.execute.assert_any_await(
         "SELECT set_config('lock_timeout', %s, true)",
         ["2500ms"],
     )
-    cursor.execute.assert_any_await("SELECT set_config('row_security', 'on', true)")
-    cursor.execute.assert_any_await("SELECT set_config('search_path', 'pg_catalog, public', true)")
-    cursor.execute.assert_any_await("SELECT %s::integer AS value", [1])
+    control.execute.assert_any_await("SELECT set_config('row_security', 'on', true)")
+    control.execute.assert_any_await("SELECT set_config('search_path', 'pg_catalog, public', true)")
+    cursor.execute.assert_awaited_once_with("SELECT %s::integer AS value", [1])
     cursor.fetchmany.assert_awaited_once_with(2)
     connection.rollback.assert_awaited_once()
     connection.commit.assert_not_awaited()
@@ -127,8 +128,9 @@ async def test_bounded_unrestricted_statement_commits_without_rows() -> None:
 
 @pytest.mark.asyncio
 async def test_bounded_query_rolls_back_on_failure_and_cancellation() -> None:
+    failure_control = make_cursor()
     failure_cursor = make_cursor(execute_error=RuntimeError("database failure"))
-    failure_connection = make_connection(failure_cursor)
+    failure_connection = make_connection(failure_control, failure_cursor)
     failure_driver = SqlDriver(conn=failure_connection)
     with pytest.raises(RuntimeError, match="database failure"):
         await failure_driver.execute_bounded_query(
@@ -139,8 +141,9 @@ async def test_bounded_query_rolls_back_on_failure_and_cancellation() -> None:
         )
     failure_connection.rollback.assert_awaited_once()
 
+    cancelled_control = make_cursor()
     cancelled_cursor = make_cursor(execute_error=asyncio.CancelledError())
-    cancelled_connection = make_connection(cancelled_cursor)
+    cancelled_connection = make_connection(cancelled_control, cancelled_cursor)
     cancelled_driver = SqlDriver(conn=cancelled_connection)
     with pytest.raises(asyncio.CancelledError):
         await cancelled_driver._execute_bounded_with_connection(  # pyright: ignore[reportPrivateUsage]

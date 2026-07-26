@@ -30,9 +30,7 @@ async def test_million_row_source_fetches_only_visible_ceiling_and_leaves_no_cur
         assert result.truncated is True
 
         async with connection.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(
-                "SELECT count(*) AS cursor_count FROM pg_catalog.pg_cursors WHERE name LIKE 'pgsql_mcp_%'"
-            )
+            await cursor.execute("SELECT count(*) AS cursor_count FROM pg_catalog.pg_cursors WHERE name LIKE 'pgsql_mcp_%'")
             row = await cursor.fetchone()
             assert row is not None
             assert row["cursor_count"] == 0
