@@ -44,6 +44,10 @@ _TERMINAL_FAILURE = {
     MaintenanceOperationStatus.FAILED,
     MaintenanceOperationStatus.RECONCILED_FAILED,
 }
+_INDEX_CLEANUP_SQL: dict[str, Composable] = {
+    "on": SQL("ON"),
+    "off": SQL("OFF"),
+}
 _EXPECTED_COLUMNS: tuple[tuple[str, int, bool, str], ...] = (
     ("id", 20, True, "a"),
     ("name", 25, True, ""),
@@ -74,6 +78,10 @@ class PostgresMaintenanceBackend:
         inspection_timeout_seconds: int = 30,
     ) -> None:
         self.sql_driver = sql_driver
+        if not isinstance(inspection_timeout_seconds, int) or isinstance(inspection_timeout_seconds, bool):
+            raise ValueError("inspection_timeout_seconds must be an integer")
+        if inspection_timeout_seconds < 1 or inspection_timeout_seconds > 300:
+            raise ValueError("inspection_timeout_seconds must be between 1 and 300")
         self.ledger_schema = _validated_identifier(ledger_schema, "ledger_schema")
         self.ledger_table = _validated_identifier(ledger_table, "ledger_table")
         self.ledger_regclass = f"{self.ledger_schema}.{self.ledger_table}"
@@ -107,6 +115,7 @@ class PostgresMaintenanceBackend:
     ) -> MaintenanceOperationResult:
         plan.assert_integrity()
         operation_started = False
+        operation_completed = False
         record_started = False
         try:
             async with asyncio.timeout(timeout_seconds):
@@ -158,6 +167,7 @@ class PostgresMaintenanceBackend:
                         operation_started = True
                         async with connection.cursor() as cursor:
                             await cursor.execute(self._build_command(plan))
+                        operation_completed = True
                         active_row = await self._finish_record(
                             connection,
                             name=plan.name,
@@ -178,13 +188,16 @@ class PostgresMaintenanceBackend:
                         raise
                     except BaseException as exc:
                         error_code = _error_code(exc)
-                        outcome = "failed"
+                        outcome = "unknown" if operation_completed else "failed"
                         if record_started:
+                            terminal_status = (
+                                MaintenanceOperationStatus.UNKNOWN if operation_completed else MaintenanceOperationStatus.FAILED
+                            )
                             try:
                                 await self._finish_record(
                                     connection,
                                     name=plan.name,
-                                    status=MaintenanceOperationStatus.FAILED,
+                                    status=terminal_status,
                                     error_code=error_code,
                                 )
                             except BaseException:
@@ -248,9 +261,7 @@ class PostgresMaintenanceBackend:
                                 [limit],
                             )
                             rows = await cursor.fetchall()
-                        return MaintenanceStatusSnapshot(
-                            tuple(_record_from_row(_mapping(row)) for row in rows)
-                        )
+                        return MaintenanceStatusSnapshot(tuple(_record_from_row(_mapping(row)) for row in rows))
                     finally:
                         await _attempt_rollback(connection)
         except TimeoutError as exc:
@@ -420,9 +431,7 @@ class PostgresMaintenanceBackend:
             if plan.options.skip_locked:
                 options.append(SQL("SKIP_LOCKED"))
             if plan.options.index_cleanup != "auto":
-                options.append(
-                    SQL("INDEX_CLEANUP {}").format(SQL(plan.options.index_cleanup.upper()))
-                )
+                options.append(SQL("INDEX_CLEANUP {}").format(_INDEX_CLEANUP_SQL[plan.options.index_cleanup]))
             if plan.options.parallel:
                 options.append(SQL("PARALLEL {}").format(Literal(plan.options.parallel)))
             return SQL("VACUUM ({}) {}").format(SQL(", ").join(options), relation)
@@ -452,9 +461,7 @@ class PostgresMaintenanceBackend:
             )
             await cursor.execute("SELECT set_config('row_security', 'on', false)")
             await cursor.execute("SELECT set_config('search_path', 'pg_catalog', false)")
-            await cursor.execute(
-                "SELECT set_config('application_name', 'pgsql-mcp:reviewed-maintenance', false)"
-            )
+            await cursor.execute("SELECT set_config('application_name', 'pgsql-mcp:reviewed-maintenance', false)")
 
     async def _acquire_lock(self, connection: Any, target_oid: int) -> bool:
         async with connection.cursor() as cursor:
@@ -748,7 +755,7 @@ def _mapping(row: Any) -> dict[str, Any]:
 
 def _record_from_row(row: Mapping[str, Any]) -> MaintenanceRecord:
     return MaintenanceRecord(
-        operation_id=int(row.get("operation_id", row["id"])),
+        operation_id=int(row["operation_id"] if "operation_id" in row else row["id"]),
         name=str(row["name"]),
         review_hash=str(row["review_hash"]),
         plan_version=int(row["plan_version"]),
