@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from typing import cast
 from unittest.mock import AsyncMock
@@ -23,15 +25,164 @@ from postgres_mcp.maintenance import MaintenanceReviewMismatch
 from postgres_mcp.maintenance import MaintenanceTarget
 from postgres_mcp.maintenance import PostgresMaintenanceBackend
 from postgres_mcp.maintenance import ReconciliationResolution
+from postgres_mcp.maintenance import TargetSnapshot
 from postgres_mcp.sql import DbConnPool
 from postgres_mcp.sql import SqlDriver
-from tests.unit.maintenance.test_maintenance_postgres import FakeConnection
-from tests.unit.maintenance.test_maintenance_postgres import FakeCursor
-from tests.unit.maintenance.test_maintenance_postgres import backend
-from tests.unit.maintenance.test_maintenance_postgres import configure_apply
-from tests.unit.maintenance.test_maintenance_postgres import record_row
-from tests.unit.maintenance.test_maintenance_postgres import reviewed_plan
-from tests.unit.maintenance.test_maintenance_postgres import snapshot
+
+
+class FakeCursor:
+    def __init__(
+        self,
+        *,
+        one: Any = None,
+        rows: list[Any] | None = None,
+        execute_error: BaseException | None = None,
+    ) -> None:
+        self.one = one
+        self.rows = rows or []
+        self.execute = AsyncMock(side_effect=execute_error)
+
+    async def __aenter__(self) -> FakeCursor:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        return None
+
+    async def fetchone(self) -> Any:
+        return self.one
+
+    async def fetchall(self) -> list[Any]:
+        return self.rows
+
+
+class FakeConnection:
+    def __init__(
+        self,
+        cursors: list[FakeCursor] | None = None,
+        *,
+        autocommit: bool = False,
+    ) -> None:
+        self._cursors = iter(cursors or [])
+        self.autocommit = autocommit
+        self.set_autocommit = AsyncMock(side_effect=self._set_autocommit)
+        self.rollback = AsyncMock()
+
+    async def _set_autocommit(self, value: bool) -> None:
+        self.autocommit = value
+
+    def cursor(self, **_kwargs: Any) -> FakeCursor:
+        return next(self._cursors)
+
+
+class FakeDriver:
+    def __init__(self, connection: FakeConnection) -> None:
+        self._connection = connection
+        self.conn = object()
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[FakeConnection]:
+        yield self._connection
+
+
+def backend(connection: FakeConnection) -> PostgresMaintenanceBackend:
+    return PostgresMaintenanceBackend(cast(SqlDriver, FakeDriver(connection)))
+
+
+def snapshot(
+    *,
+    oid: int = 42,
+    kind: str = "r",
+    populated: bool = True,
+    unique_index: bool = False,
+    exclusion_index: bool = False,
+) -> TargetSnapshot:
+    return TargetSnapshot(
+        oid=oid,
+        relation_kind=kind,
+        persistence="p",
+        is_partition=False,
+        is_populated=populated,
+        has_usable_unique_index=unique_index,
+        is_exclusion_index=exclusion_index,
+    )
+
+
+def reviewed_plan(operation: MaintenanceOperation = MaintenanceOperation.VACUUM_ANALYZE):
+    target_snapshot = snapshot(
+        kind=(
+            "i"
+            if operation is MaintenanceOperation.REINDEX_INDEX_CONCURRENTLY
+            else "m"
+            if operation is MaintenanceOperation.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY
+            else "r"
+        ),
+        unique_index=operation is MaintenanceOperation.REFRESH_MATERIALIZED_VIEW_CONCURRENTLY,
+    )
+    request = MaintenanceRequest(
+        name="nightly-items-maintenance",
+        operation=operation,
+        target=MaintenanceTarget("app", "items"),
+    )
+    return MaintenancePlanner().create_plan(request, target_snapshot)
+
+
+def record_row(plan, *, status: MaintenanceOperationStatus = MaintenanceOperationStatus.RUNNING) -> dict[str, Any]:
+    return {
+        "id": 7,
+        "name": plan.name,
+        "review_hash": plan.review_hash,
+        "plan_version": plan.plan_version,
+        "operation": plan.operation.value,
+        "target_schema": plan.target.schema,
+        "target_name": plan.target.name,
+        "target_oid": plan.target_oid,
+        "plan": plan.canonical_payload(),
+        "status": status.value,
+        "started_at": "2026-07-25T00:00:00+00:00",
+        "finished_at": None,
+        "error_code": None,
+        "applied_by": "postgres",
+    }
+
+
+def configure_apply(
+    adapter: PostgresMaintenanceBackend,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    plan,
+    existing: dict[str, Any] | None = None,
+    execute_error: BaseException | None = None,
+) -> tuple[FakeConnection, FakeCursor, AsyncMock, AsyncMock]:
+    cursor = FakeCursor(execute_error=execute_error)
+    connection = cast(FakeDriver, adapter.sql_driver)._connection
+    connection._cursors = iter([cursor])
+    finish = AsyncMock(return_value=record_row(plan, status=MaintenanceOperationStatus.SUCCEEDED))
+    unknown = AsyncMock()
+    monkeypatch.setattr(adapter, "_configure_session", AsyncMock())
+    monkeypatch.setattr(adapter, "_acquire_lock", AsyncMock(return_value=True))
+    monkeypatch.setattr(adapter, "_ledger_exists", AsyncMock(return_value=existing is not None))
+    monkeypatch.setattr(
+        adapter,
+        "_inspect_on_connection",
+        AsyncMock(
+            return_value=snapshot(
+                oid=plan.target_oid,
+                kind=plan.target_kind,
+                populated=bool(plan.preconditions["is_populated"]),
+                unique_index=bool(plan.preconditions["has_usable_unique_index"]),
+                exclusion_index=bool(plan.preconditions["is_exclusion_index"]),
+            )
+        ),
+    )
+    monkeypatch.setattr(adapter, "_ensure_ledger", AsyncMock())
+    monkeypatch.setattr(adapter, "_validate_ledger", AsyncMock())
+    monkeypatch.setattr(adapter, "_get_by_name", AsyncMock(return_value=existing))
+    monkeypatch.setattr(adapter, "_insert_running_record", AsyncMock(return_value=record_row(plan)))
+    monkeypatch.setattr(adapter, "_restart_record", AsyncMock(return_value=record_row(plan)))
+    monkeypatch.setattr(adapter, "_finish_record", finish)
+    monkeypatch.setattr(adapter, "_best_effort_finish_unknown", unknown)
+    monkeypatch.setattr(adapter, "_cleanup_session", AsyncMock(return_value=None))
+    return connection, cursor, finish, unknown
 
 
 class ImmediateTimeout:
