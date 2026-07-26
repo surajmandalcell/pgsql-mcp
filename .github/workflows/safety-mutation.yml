@@ -58,7 +58,7 @@ jobs:
               [[ -z "$mutant" ]] && continue
               printf '\n===== %s =====\n' "$mutant" >> mutation-details.txt
               uv run --with 'mutmut==3.6.0' mutmut show "$mutant" >> mutation-details.txt 2>&1 || true
-            done < <(sed -n 's/: survived$//p' mutation-results.txt)
+            done < <(sed -n 's/^[[:space:]]*\(.*\): survived$/\1/p' mutation-results.txt)
           fi
 
       - name: Reject surviving or indeterminate mutants
