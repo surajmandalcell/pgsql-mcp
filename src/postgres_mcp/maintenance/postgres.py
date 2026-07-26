@@ -683,14 +683,7 @@ class PostgresMaintenanceBackend:
             raise RuntimeError("maintenance ledger restart did not return a row")
         return _mapping(row)
 
-    async def _finish_record(
-        self,
-        connection: Any,
-        *,
-        name: str,
-        status: MaintenanceOperationStatus,
-        error_code: str | None,
-    ) -> dict[str, Any]:
+    async def _finish_record(self, connection: Any, *, name: str, status: MaintenanceOperationStatus, error_code: str | None) -> dict[str, Any]:
         async with connection.cursor(row_factory=dict_row) as cursor:
             await cursor.execute(
                 SQL(
