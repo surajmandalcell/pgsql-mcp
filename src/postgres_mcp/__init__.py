@@ -1,4 +1,4 @@
-"""Public entry points for the observable full and reliability-focused lite servers."""
+"""Public entry points for the observable full, lite, and HA pgsql-mcp servers."""
 
 from __future__ import annotations
 
@@ -37,13 +37,18 @@ def lite_main() -> None:
     _run(".lite_server")
 
 
+def ha_main() -> None:
+    """Run the focused, read-only pgsql-mcp-ha diagnostics server."""
+    _run(".ha_server")
+
+
 def __getattr__(name: str) -> ModuleType:
     """Preserve historical module exports without eager advanced imports."""
-    if name in {"server", "lite_server", "top_queries"}:
+    if name in {"server", "observed_server", "lite_server", "ha_server", "top_queries"}:
         module = importlib.import_module(f".{name}", __name__)
         globals()[name] = module
         return module
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["lite_main", "main"]
+__all__ = ["ha_main", "lite_main", "main"]
