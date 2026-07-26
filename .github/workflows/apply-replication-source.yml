@@ -190,7 +190,6 @@ jobs:
         run: |
           set -euo pipefail
           git add -- \
-            .github/workflows/postgres-compatibility.yml \
             README.md docs/compatibility.md docs/replication.md pyproject.toml \
             src/postgres_mcp/__init__.py src/postgres_mcp/ha_server.py \
             src/postgres_mcp/lite_server.py src/postgres_mcp/replication \
