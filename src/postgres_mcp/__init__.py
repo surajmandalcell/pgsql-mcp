@@ -1,4 +1,4 @@
-"""Public entry points for the full, lite, and HA pgsql-mcp servers."""
+"""Public entry points for the observable full, lite, and HA pgsql-mcp servers."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from types import ModuleType
 
 
 def _configure_runtime() -> None:
-    """Configure process behavior shared by both console entry points."""
+    """Configure process behavior shared by all console entry points."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -28,8 +28,8 @@ def _run(module_name: str) -> None:
 
 
 def main() -> None:
-    """Run the full pgsql-mcp server."""
-    _run(".server")
+    """Run the full pgsql-mcp server with privacy-preserving observability."""
+    _run(".observed_server")
 
 
 def lite_main() -> None:
@@ -44,7 +44,7 @@ def ha_main() -> None:
 
 def __getattr__(name: str) -> ModuleType:
     """Preserve historical module exports without eager advanced imports."""
-    if name in {"server", "lite_server", "ha_server", "top_queries"}:
+    if name in {"server", "observed_server", "lite_server", "ha_server", "top_queries"}:
         module = importlib.import_module(f".{name}", __name__)
         globals()[name] = module
         return module
