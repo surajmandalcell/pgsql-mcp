@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
+import sys
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
 
-from tests.mutation import safety_mutations as mutations
+
+def _load_mutation_module() -> Any:
+    module_path = Path(__file__).resolve().parents[2] / "mutation" / "safety_mutations.py"
+    spec = importlib.util.spec_from_file_location("pgsql_mcp_safety_mutations", module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load mutation runner from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+mutations = _load_mutation_module()
 
 
 def completed(returncode: int, output: str = "") -> subprocess.CompletedProcess[str]:
