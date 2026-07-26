@@ -19,7 +19,7 @@ def test_registry_rejects_invalid_cardinality_and_reuses_existing_tool() -> None
     with pytest.raises(ValueError, match="positive"):
         observability.MetricsRegistry(max_tools=0)
 
-    ticks = iter((10, 5, 20, 30))
+    ticks = iter((10, 20, 5, 30))
     registry = observability.MetricsRegistry(clock_ns=lambda: next(ticks))
     first = registry.start("same")
     second = registry.start("same")
