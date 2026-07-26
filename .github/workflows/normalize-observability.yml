@@ -55,17 +55,23 @@ jobs:
 
           replace_once(
               'src/postgres_mcp/observability.py',
-              '''class ToolCallServer(Protocol):
-              """Minimal FastMCP-compatible call surface used by the installer."""
-
-              async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[Any]: ...
+              '''    if getattr(server, "_pgsql_mcp_observability_installed", False):
+                  return server
+              original_call = server.call_tool
           ''',
-              '''class ToolCallServer(Protocol):
-              """Minimal FastMCP-compatible call surface used by the installer."""
-
-              _pgsql_mcp_observability_installed: bool
-
-              async def call_tool(self, name: str, arguments: dict[str, Any]) -> Sequence[Any]: ...
+              '''    server_object: Any = server
+              if getattr(server_object, "_pgsql_mcp_observability_installed", False):
+                  return server
+              original_call = server.call_tool
+          ''',
+          )
+          replace_once(
+              'src/postgres_mcp/observability.py',
+              '''    setattr(server, "call_tool", observed_call)
+              setattr(server, "_pgsql_mcp_observability_installed", True)
+          ''',
+              '''    setattr(server_object, "call_tool", observed_call)
+              setattr(server_object, "_pgsql_mcp_observability_installed", True)
           ''',
           )
           replace_once(
