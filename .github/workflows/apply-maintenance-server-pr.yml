@@ -50,9 +50,17 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Extract reviewed source and apply replay invariant
+      - name: Extract reviewed source and remove transition machinery
         if: steps.source_bundle.outputs.present == 'true'
-        run: python .maintenance-transfer/source_transition.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .maintenance-transfer/source_transition.py
+          rm -rf .maintenance-transfer
+          rm -f \
+            .github/workflows/apply-maintenance-server-pr.yml \
+            .github/workflows/apply-maintenance-server.yml \
+            .github/workflows/maintenance-diagnostic.yml
 
       - name: Install dependencies
         if: steps.source_bundle.outputs.present == 'true'
@@ -101,7 +109,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .maintenance-transfer
           git add -A -- \
             README.md \
             docs/compatibility.md \
@@ -113,7 +120,10 @@ jobs:
             tests/unit/lite/test_lite_server.py \
             tests/unit/maintenance \
             tests/unit/server/test_maintenance_tools.py \
-            .maintenance-transfer
+            .maintenance-transfer \
+            .github/workflows/apply-maintenance-server-pr.yml \
+            .github/workflows/apply-maintenance-server.yml \
+            .github/workflows/maintenance-diagnostic.yml
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
