@@ -87,19 +87,54 @@ jobs:
             tests/unit/maintenance/test_postgres.py \
             tests/unit/maintenance/test_service.py
 
-      - name: Install dependencies and validate complete source
+      - name: Install dependencies
+        if: steps.source_bundle.outputs.present == 'true'
+        run: uv sync --frozen --all-extras
+
+      - name: Validate complete source
         if: steps.source_bundle.outputs.present == 'true'
         shell: bash
         run: |
-          set -euo pipefail
-          uv sync --frozen --all-extras
-          uv run ruff format --check .
-          uv run ruff check .
-          uv run pyright
-          uv run pytest -q
+          set +e
+          set -o pipefail
+
+          uv run ruff format --check . 2>&1 | tee /tmp/maintenance-ruff-format.txt
+          format_status=${PIPESTATUS[0]}
+
+          uv run ruff check . 2>&1 | tee /tmp/maintenance-ruff-check.txt
+          lint_status=${PIPESTATUS[0]}
+
+          uv run pyright 2>&1 | tee /tmp/maintenance-pyright.txt
+          pyright_status=${PIPESTATUS[0]}
+
+          uv run pytest -q --junitxml=/tmp/maintenance-pytest.xml 2>&1 | tee /tmp/maintenance-pytest.txt
+          pytest_status=${PIPESTATUS[0]}
+
+          printf 'format=%s\nlint=%s\npyright=%s\npytest=%s\n' \
+            "$format_status" "$lint_status" "$pyright_status" "$pytest_status" \
+            | tee /tmp/maintenance-validation-status.txt
+
+          if (( format_status != 0 || lint_status != 0 || pyright_status != 0 || pytest_status != 0 )); then
+            exit 1
+          fi
+
+      - name: Upload maintenance validation evidence
+        if: always() && steps.source_bundle.outputs.present == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reviewed-maintenance-source-validation
+          path: |
+            /tmp/maintenance-ruff-format.txt
+            /tmp/maintenance-ruff-check.txt
+            /tmp/maintenance-pyright.txt
+            /tmp/maintenance-pytest.txt
+            /tmp/maintenance-pytest.xml
+            /tmp/maintenance-validation-status.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Commit exact validated source bundle
-        if: steps.source_bundle.outputs.present == 'true'
+        if: steps.source_bundle.outputs.present == 'true' && success()
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
