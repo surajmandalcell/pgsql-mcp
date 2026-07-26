@@ -87,102 +87,25 @@ jobs:
             tests/unit/maintenance/test_postgres.py \
             tests/unit/maintenance/test_service.py
 
-          # A successful REINDEX CONCURRENTLY replaces the index relation and OID.
-          # Exact-plan replay must consult the durable success record before
-          # revalidating the now-replaced live target.
+          # REINDEX CONCURRENTLY replaces the index relation and OID. Exact-plan
+          # replay must consult durable success before validating the new live OID.
           python - <<'PY'
+          import base64
           from pathlib import Path
 
           backend_path = Path("src/postgres_mcp/maintenance/postgres.py")
           backend = backend_path.read_text()
-          old_backend = '''                        snapshot = await self._inspect_on_connection(connection, plan.target)
-                        self._verify_snapshot(plan, snapshot)
-                        await self._ensure_ledger(connection)
-                        await self._validate_ledger(connection)
-                        existing = await self._get_by_name(connection, plan.name)
-                        if existing is not None:
-                            stored_plan = self._verified_plan(existing)
-                            if stored_plan.review_hash != plan.review_hash:
-                                raise MaintenanceConflictError(
-                                    f"maintenance operation {plan.name!r} already exists with different reviewed content"
-                                )
-                            existing_status = MaintenanceOperationStatus(str(existing["status"]))
-                            if existing_status in _TERMINAL_SUCCESS:
-                                return MaintenanceOperationResult(
-                                    MaintenanceOperationStatus.ALREADY_SUCCEEDED,
-                                    _record_from_row(existing),
-                                )
-                            if existing_status in {
-                                MaintenanceOperationStatus.RUNNING,
-                                MaintenanceOperationStatus.UNKNOWN,
-                            }:
-                                raise MaintenanceConflictError(
-                                    f"maintenance operation {plan.name!r} has an unresolved outcome"
-                                )
-                            active_row = await self._restart_record(connection, plan)
-                        else:
-                            active_row = await self._insert_running_record(connection, plan)
-'''
-          new_backend = '''                        ledger_exists = await self._ledger_exists(connection)
-                        existing: dict[str, Any] | None = None
-                        if ledger_exists:
-                            await self._validate_ledger(connection)
-                            existing = await self._get_by_name(connection, plan.name)
-                            if existing is not None:
-                                stored_plan = self._verified_plan(existing)
-                                if stored_plan.review_hash != plan.review_hash:
-                                    raise MaintenanceConflictError(
-                                        f"maintenance operation {plan.name!r} already exists with different reviewed content"
-                                    )
-                                existing_status = MaintenanceOperationStatus(str(existing["status"]))
-                                if existing_status in _TERMINAL_SUCCESS:
-                                    return MaintenanceOperationResult(
-                                        MaintenanceOperationStatus.ALREADY_SUCCEEDED,
-                                        _record_from_row(existing),
-                                    )
-                                if existing_status in {
-                                    MaintenanceOperationStatus.RUNNING,
-                                    MaintenanceOperationStatus.UNKNOWN,
-                                }:
-                                    raise MaintenanceConflictError(
-                                        f"maintenance operation {plan.name!r} has an unresolved outcome"
-                                    )
-
-                        snapshot = await self._inspect_on_connection(connection, plan.target)
-                        self._verify_snapshot(plan, snapshot)
-                        if not ledger_exists:
-                            await self._ensure_ledger(connection)
-                            await self._validate_ledger(connection)
-                        if existing is not None:
-                            active_row = await self._restart_record(connection, plan)
-                        else:
-                            active_row = await self._insert_running_record(connection, plan)
-'''
-          if backend.count(old_backend) != 1:
-              raise RuntimeError("expected exactly one maintenance apply block to patch")
-          backend_path.write_text(backend.replace(old_backend, new_backend, 1))
+          backend_start = backend.index("                        snapshot = await self._inspect_on_connection(connection, plan.target)")
+          backend_end = backend.index("                        record_started = True", backend_start)
+          backend_replacement = base64.b64decode("ICAgICAgICAgICAgICAgICAgICAgICAgbGVkZ2VyX2V4aXN0cyA9IGF3YWl0IHNlbGYuX2xlZGdlcl9leGlzdHMoY29ubmVjdGlvbikKICAgICAgICAgICAgICAgICAgICAgICAgZXhpc3Rpbmc6IGRpY3Rbc3RyLCBBbnldIHwgTm9uZSA9IE5vbmUKICAgICAgICAgICAgICAgICAgICAgICAgaWYgbGVkZ2VyX2V4aXN0czoKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGF3YWl0IHNlbGYuX3ZhbGlkYXRlX2xlZGdlcihjb25uZWN0aW9uKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgZXhpc3RpbmcgPSBhd2FpdCBzZWxmLl9nZXRfYnlfbmFtZShjb25uZWN0aW9uLCBwbGFuLm5hbWUpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBpZiBleGlzdGluZyBpcyBub3QgTm9uZToKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBzdG9yZWRfcGxhbiA9IHNlbGYuX3ZlcmlmaWVkX3BsYW4oZXhpc3RpbmcpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgc3RvcmVkX3BsYW4ucmV2aWV3X2hhc2ggIT0gcGxhbi5yZXZpZXdfaGFzaDoKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcmFpc2UgTWFpbnRlbmFuY2VDb25mbGljdEVycm9yKAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZiJtYWludGVuYW5jZSBvcGVyYXRpb24ge3BsYW4ubmFtZSFyfSBhbHJlYWR5IGV4aXN0cyB3aXRoIGRpZmZlcmVudCByZXZpZXdlZCBjb250ZW50IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZXhpc3Rpbmdfc3RhdHVzID0gTWFpbnRlbmFuY2VPcGVyYXRpb25TdGF0dXMoc3RyKGV4aXN0aW5nWyJzdGF0dXMiXSkpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgZXhpc3Rpbmdfc3RhdHVzIGluIF9URVJNSU5BTF9TVUNDRVNTOgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICByZXR1cm4gTWFpbnRlbmFuY2VPcGVyYXRpb25SZXN1bHQoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBNYWludGVuYW5jZU9wZXJhdGlvblN0YXR1cy5BTFJFQURZX1NVQ0NFRURFRCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIF9yZWNvcmRfZnJvbV9yb3coZXhpc3RpbmcpLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgZXhpc3Rpbmdfc3RhdHVzIGluIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgTWFpbnRlbmFuY2VPcGVyYXRpb25TdGF0dXMuUlVOTklORywKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgTWFpbnRlbmFuY2VPcGVyYXRpb25TdGF0dXMuVU5LTk9XTiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9OgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICByYWlzZSBNYWludGVuYW5jZUNvbmZsaWN0RXJyb3IoZiJtYWludGVuYW5jZSBvcGVyYXRpb24ge3BsYW4ubmFtZSFyfSBoYXMgYW4gdW5yZXNvbHZlZCBvdXRjb21lIikKCiAgICAgICAgICAgICAgICAgICAgICAgIHNuYXBzaG90ID0gYXdhaXQgc2VsZi5faW5zcGVjdF9vbl9jb25uZWN0aW9uKGNvbm5lY3Rpb24sIHBsYW4udGFyZ2V0KQogICAgICAgICAgICAgICAgICAgICAgICBzZWxmLl92ZXJpZnlfc25hcHNob3QocGxhbiwgc25hcHNob3QpCiAgICAgICAgICAgICAgICAgICAgICAgIGlmIG5vdCBsZWRnZXJfZXhpc3RzOgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYXdhaXQgc2VsZi5fZW5zdXJlX2xlZGdlcihjb25uZWN0aW9uKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgYXdhaXQgc2VsZi5fdmFsaWRhdGVfbGVkZ2VyKGNvbm5lY3Rpb24pCiAgICAgICAgICAgICAgICAgICAgICAgIGlmIGV4aXN0aW5nIGlzIG5vdCBOb25lOgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYWN0aXZlX3JvdyA9IGF3YWl0IHNlbGYuX3Jlc3RhcnRfcmVjb3JkKGNvbm5lY3Rpb24sIHBsYW4pCiAgICAgICAgICAgICAgICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICAgICAgICAgICAgICBhY3RpdmVfcm93ID0gYXdhaXQgc2VsZi5faW5zZXJ0X3J1bm5pbmdfcmVjb3JkKGNvbm5lY3Rpb24sIHBsYW4pCg==").decode()
+          backend_path.write_text(backend[:backend_start] + backend_replacement + backend[backend_end:])
 
           test_path = Path("tests/unit/maintenance/test_maintenance_postgres.py")
           tests = test_path.read_text()
-          old_test = '''    result = await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)
-
-    assert result.status is MaintenanceOperationStatus.ALREADY_SUCCEEDED
-    cursor.execute.assert_not_awaited()
-    finish.assert_not_awaited()
-'''
-          new_test = '''    inspect = AsyncMock(return_value=snapshot(oid=99))
-    monkeypatch.setattr(adapter, "_inspect_on_connection", inspect)
-
-    result = await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)
-
-    assert result.status is MaintenanceOperationStatus.ALREADY_SUCCEEDED
-    inspect.assert_not_awaited()
-    cursor.execute.assert_not_awaited()
-    finish.assert_not_awaited()
-'''
-          if tests.count(old_test) != 1:
-              raise RuntimeError("expected exactly one maintenance idempotency test block to patch")
-          test_path.write_text(tests.replace(old_test, new_test, 1))
+          test_start = tests.index("    result = await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)", tests.index("async def test_apply_is_idempotent_for_a_succeeded_reviewed_plan"))
+          test_end = tests.index("\n\n\n@pytest.mark.asyncio\nasync def test_apply_rejects", test_start)
+          test_replacement = base64.b64decode("ICAgIGluc3BlY3QgPSBBc3luY01vY2socmV0dXJuX3ZhbHVlPXNuYXBzaG90KG9pZD05OSkpCiAgICBtb25rZXlwYXRjaC5zZXRhdHRyKGFkYXB0ZXIsICJfaW5zcGVjdF9vbl9jb25uZWN0aW9uIiwgaW5zcGVjdCkKCiAgICByZXN1bHQgPSBhd2FpdCBhZGFwdGVyLmFwcGx5KHBsYW4sIHRpbWVvdXRfc2Vjb25kcz0zMCwgbG9ja190aW1lb3V0X3NlY29uZHM9NSkKCiAgICBhc3NlcnQgcmVzdWx0LnN0YXR1cyBpcyBNYWludGVuYW5jZU9wZXJhdGlvblN0YXR1cy5BTFJFQURZX1NVQ0NFRURFRAogICAgaW5zcGVjdC5hc3NlcnRfbm90X2F3YWl0ZWQoKQogICAgY3Vyc29yLmV4ZWN1dGUuYXNzZXJ0X25vdF9hd2FpdGVkKCkKICAgIGZpbmlzaC5hc3NlcnRfbm90X2F3YWl0ZWQoKQ==").decode()
+          test_path.write_text(tests[:test_start] + test_replacement + tests[test_end:])
           PY
 
       - name: Install dependencies
