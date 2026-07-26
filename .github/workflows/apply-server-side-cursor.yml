@@ -48,104 +48,23 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          from textwrap import dedent, indent
 
-          def replace_once(path: str, old: str, new: str) -> None:
-              target = Path(path)
-              source = target.read_text()
-              if source.count(old) != 1:
-                  raise RuntimeError(f'expected exactly one match in {path}: {old[:100]!r}')
-              target.write_text(source.replace(old, new, 1))
+          driver_path = Path('src/postgres_mcp/sql/sql_driver.py')
+          source = driver_path.read_text()
+          if 'import secrets\n' not in source:
+              if source.count('import re\n') != 1:
+                  raise RuntimeError('expected one re import')
+              source = source.replace('import re\n', 'import re\nimport secrets\n', 1)
 
-          replace_once(
-              'src/postgres_mcp/sql/sql_driver.py',
-              'import re\n',
-              'import re\nimport secrets\n',
-          )
-
-          old = '''    async def _execute_bounded_with_connection(
-              self,
-              connection: Any,
-              query: LiteralString,
-              *,
-              params: list[Any] | None,
-              max_rows: int,
-              force_readonly: bool,
-              timeout_seconds: float | None,
-          ) -> BoundedQueryResult:
-              transaction_started = False
-              try:
-                  async with connection.cursor(row_factory=dict_row) as cursor:
-                      transaction_started = True
-                      await cursor.execute("BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION")
-                      if timeout_seconds is not None:
-                          timeout_ms = max(1, int(timeout_seconds * 1000))
-                          lock_timeout_ms = max(1, int(min(timeout_seconds, DEFAULT_LOCK_TIMEOUT_SECONDS) * 1000))
-                          await cursor.execute(
-                              "SELECT set_config('statement_timeout', %s, true)",
-                              [f"{timeout_ms}ms"],
-                          )
-                          await cursor.execute(
-                              "SELECT set_config('lock_timeout', %s, true)",
-                              [f"{lock_timeout_ms}ms"],
-                          )
-                          await cursor.execute(
-                              "SELECT set_config('idle_in_transaction_session_timeout', %s, true)",
-                              [f"{timeout_ms}ms"],
-                          )
-                      await cursor.execute("SELECT set_config('row_security', 'on', true)")
-                      await cursor.execute("SELECT set_config('search_path', 'pg_catalog, public', true)")
-
-                      if params:
-                          await cursor.execute(query, params)
-                      else:
-                          await cursor.execute(query)
-
-                      command = _command_name(query)
-                      affected_rows = _normalized_rowcount(getattr(cursor, "rowcount", None))
-                      if cursor.description is None:
-                          if force_readonly:
-                              await connection.rollback()
-                          else:
-                              await connection.commit()
-                          transaction_started = False
-                          return BoundedQueryResult(
-                              rows=[],
-                              columns=[],
-                              row_count=0,
-                              truncated=False,
-                              affected_rows=affected_rows,
-                              command=command,
-                          )
-
-                      fetched = await cursor.fetchmany(max_rows + 1)
-                      truncated = len(fetched) > max_rows
-                      visible_rows = fetched[:max_rows]
-                      rows = [dict(row) for row in visible_rows]
-                      columns = [column_info_from_description(item) for item in cursor.description]
-                      if force_readonly:
-                          await connection.rollback()
-                      else:
-                          await connection.commit()
-                      transaction_started = False
-                      return BoundedQueryResult(
-                          rows=rows,
-                          columns=columns,
-                          row_count=len(rows),
-                          truncated=truncated,
-                          affected_rows=affected_rows,
-                          command=command,
-                      )
-              except BaseException:
-                  if transaction_started:
-                      try:
-                          await connection.rollback()
-                      except Exception as rollback_error:
-                          logger.error("Error rolling back bounded query: %s", rollback_error)
-                  raise
-
-          '''
-
-          new = '''    async def _configure_bounded_transaction(
+          start_marker = '    async def _execute_bounded_with_connection(\n'
+          end_marker = '    async def execute_transaction(\n'
+          start = source.index(start_marker)
+          end = source.index(end_marker, start)
+          replacement = indent(
+              dedent(
+                  '''\
+          async def _configure_bounded_transaction(
               self,
               cursor: Any,
               *,
@@ -172,7 +91,13 @@ jobs:
               await cursor.execute("SELECT set_config('search_path', 'pg_catalog, public', true)")
 
           @staticmethod
-          def _bounded_result(cursor: Any, query: LiteralString, rows: list[dict[str, Any]], *, truncated: bool) -> BoundedQueryResult:
+          def _bounded_result(
+              cursor: Any,
+              query: LiteralString,
+              rows: list[dict[str, Any]],
+              *,
+              truncated: bool,
+          ) -> BoundedQueryResult:
               description = cursor.description or ()
               return BoundedQueryResult(
                   rows=rows,
@@ -208,13 +133,11 @@ jobs:
                           await cursor.execute(query, params)
                       else:
                           await cursor.execute(query)
-
                       fetched = await cursor.fetchmany(max_rows + 1) if cursor.description is not None else []
-                      visible_rows = [dict(row) for row in fetched[:max_rows]]
                       result = self._bounded_result(
                           cursor,
                           query,
-                          visible_rows,
+                          [dict(row) for row in fetched[:max_rows]],
                           truncated=len(fetched) > max_rows,
                       )
 
@@ -261,16 +184,14 @@ jobs:
                           await cursor.execute(query, params)
                       else:
                           await cursor.execute(query)
-
                       if cursor.description is None:
                           result = self._bounded_result(cursor, query, [], truncated=False)
                       else:
                           fetched = await cursor.fetchmany(max_rows + 1)
-                          visible_rows = [dict(row) for row in fetched[:max_rows]]
                           result = self._bounded_result(
                               cursor,
                               query,
-                              visible_rows,
+                              [dict(row) for row in fetched[:max_rows]],
                               truncated=len(fetched) > max_rows,
                           )
 
@@ -286,56 +207,100 @@ jobs:
                   raise
 
           '''
-          replace_once('src/postgres_mcp/sql/sql_driver.py', old, new)
+              ),
+              '    ',
+          )
+          driver_path.write_text(source[:start] + replacement + source[end:])
 
           test_path = Path('tests/unit/sql/test_bounded_driver.py')
           tests = test_path.read_text()
-          old_read = '''    cursor = make_cursor(
-                  rows=[{"value": 1}, {"value": 2}],
-                  description=[Description()],
-              )
-              connection = make_connection(cursor)
-              driver = SqlDriver(conn=connection)
-          '''
-          new_read = '''    control = make_cursor()
+
+          read_start = tests.index('@pytest.mark.asyncio\nasync def test_bounded_read_only_query_rolls_back_and_truncates() -> None:\n')
+          read_end = tests.index('@pytest.mark.asyncio\nasync def test_bounded_unrestricted_statement_commits_without_rows() -> None:\n', read_start)
+          read_test = dedent(
+              '''\
+          @pytest.mark.asyncio
+          async def test_bounded_read_only_query_rolls_back_and_truncates() -> None:
+              control = make_cursor()
               cursor = make_cursor(
                   rows=[{"value": 1}, {"value": 2}],
                   description=[Description()],
               )
               connection = make_connection(control, cursor)
               driver = SqlDriver(conn=connection)
-          '''
-          if tests.count(old_read) != 1:
-              raise RuntimeError('expected one legacy bounded read setup')
-          tests = tests.replace(old_read, new_read, 1)
-          tests = tests.replace('    cursor.execute.assert_any_await("BEGIN TRANSACTION READ ONLY")\n', '    control.execute.assert_any_await("BEGIN TRANSACTION READ ONLY")\n', 1)
-          tests = tests.replace('    cursor.execute.assert_any_await(\n        "SELECT set_config(\'statement_timeout\', %s, true)",\n', '    control.execute.assert_any_await(\n        "SELECT set_config(\'statement_timeout\', %s, true)",\n', 1)
-          tests = tests.replace('    cursor.execute.assert_any_await(\n        "SELECT set_config(\'lock_timeout\', %s, true)",\n', '    control.execute.assert_any_await(\n        "SELECT set_config(\'lock_timeout\', %s, true)",\n', 1)
-          tests = tests.replace('    cursor.execute.assert_any_await("SELECT set_config(\'row_security\', \'on\', true)")\n', '    control.execute.assert_any_await("SELECT set_config(\'row_security\', \'on\', true)")\n', 1)
-          tests = tests.replace('    cursor.execute.assert_any_await("SELECT set_config(\'search_path\', \'pg_catalog, public\', true)")\n', '    control.execute.assert_any_await("SELECT set_config(\'search_path\', \'pg_catalog, public\', true)")\n', 1)
 
-          old_failure = '''    failure_cursor = make_cursor(execute_error=RuntimeError("database failure"))
-              failure_connection = make_connection(failure_cursor)
+              result = await driver.execute_bounded_query(
+                  "SELECT %s::integer AS value",
+                  params=[1],
+                  max_rows=1,
+                  force_readonly=True,
+                  timeout_seconds=2.5,
+              )
+
+              assert result.rows == [{"value": 1}]
+              assert result.columns == [ColumnInfo("value", 23, 4, None, None, True)]
+              assert result.row_count == 1
+              assert result.truncated is True
+              assert result.command == "SELECT"
+              control.execute.assert_any_await("BEGIN TRANSACTION READ ONLY")
+              control.execute.assert_any_await(
+                  "SELECT set_config('statement_timeout', %s, true)",
+                  ["2500ms"],
+              )
+              control.execute.assert_any_await(
+                  "SELECT set_config('lock_timeout', %s, true)",
+                  ["2500ms"],
+              )
+              control.execute.assert_any_await("SELECT set_config('row_security', 'on', true)")
+              control.execute.assert_any_await("SELECT set_config('search_path', 'pg_catalog, public', true)")
+              cursor.execute.assert_awaited_once_with("SELECT %s::integer AS value", [1])
+              cursor.fetchmany.assert_awaited_once_with(2)
+              connection.rollback.assert_awaited_once()
+              connection.commit.assert_not_awaited()
+
+
           '''
-          new_failure = '''    failure_control = make_cursor()
+          )
+          tests = tests[:read_start] + read_test + tests[read_end:]
+
+          failure_start = tests.index('@pytest.mark.asyncio\nasync def test_bounded_query_rolls_back_on_failure_and_cancellation() -> None:\n')
+          failure_end = tests.index('@pytest.mark.asyncio\nasync def test_bounded_query_validates_public_limits() -> None:\n', failure_start)
+          failure_test = dedent(
+              '''\
+          @pytest.mark.asyncio
+          async def test_bounded_query_rolls_back_on_failure_and_cancellation() -> None:
+              failure_control = make_cursor()
               failure_cursor = make_cursor(execute_error=RuntimeError("database failure"))
               failure_connection = make_connection(failure_control, failure_cursor)
-          '''
-          if tests.count(old_failure) != 1:
-              raise RuntimeError('expected one legacy failure setup')
-          tests = tests.replace(old_failure, new_failure, 1)
+              failure_driver = SqlDriver(conn=failure_connection)
+              with pytest.raises(RuntimeError, match="database failure"):
+                  await failure_driver.execute_bounded_query(
+                      "SELECT 1",
+                      max_rows=10,
+                      force_readonly=True,
+                      timeout_seconds=1,
+                  )
+              failure_connection.rollback.assert_awaited_once()
 
-          old_cancel = '''    cancelled_cursor = make_cursor(execute_error=asyncio.CancelledError())
-              cancelled_connection = make_connection(cancelled_cursor)
-          '''
-          new_cancel = '''    cancelled_control = make_cursor()
+              cancelled_control = make_cursor()
               cancelled_cursor = make_cursor(execute_error=asyncio.CancelledError())
               cancelled_connection = make_connection(cancelled_control, cancelled_cursor)
+              cancelled_driver = SqlDriver(conn=cancelled_connection)
+              with pytest.raises(asyncio.CancelledError):
+                  await cancelled_driver._execute_bounded_with_connection(  # pyright: ignore[reportPrivateUsage]
+                      cancelled_connection,
+                      "SELECT 1",
+                      params=None,
+                      max_rows=10,
+                      force_readonly=True,
+                      timeout_seconds=1,
+                  )
+              cancelled_connection.rollback.assert_awaited_once()
+
+
           '''
-          if tests.count(old_cancel) != 1:
-              raise RuntimeError('expected one legacy cancellation setup')
-          tests = tests.replace(old_cancel, new_cancel, 1)
-          test_path.write_text(tests)
+          )
+          test_path.write_text(tests[:failure_start] + failure_test + tests[failure_end:])
           PY
 
       - name: Install dependencies
