@@ -50,63 +50,9 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Verify and extract exact source bundle
+      - name: Extract reviewed source and apply replay invariant
         if: steps.source_bundle.outputs.present == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat .maintenance-transfer/part-* > /tmp/maintenance-source.tar.gz.b64
-          python - <<'PY'
-          from __future__ import annotations
-
-          import base64
-          import hashlib
-          import io
-          import tarfile
-          from pathlib import Path, PurePosixPath
-
-          encoded = Path("/tmp/maintenance-source.tar.gz.b64").read_bytes()
-          if hashlib.sha256(encoded).hexdigest() != "76d5ed8657925962fe751b81bbe55a8d9c8324b912302902ccba5323dabd1f15":
-              raise RuntimeError("maintenance source bundle text checksum mismatch")
-
-          archive = base64.b64decode(encoded, validate=True)
-          if hashlib.sha256(archive).hexdigest() != "6ddfdc1c3a0afe5216f698048368c1e395f6f683bfde2b80624377365b220a50":
-              raise RuntimeError("maintenance source bundle archive checksum mismatch")
-
-          with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
-              for member in source.getmembers():
-                  path = PurePosixPath(member.name)
-                  if path.is_absolute() or ".." in path.parts:
-                      raise RuntimeError(f"unsafe maintenance bundle path: {member.name!r}")
-                  if member.issym() or member.islnk():
-                      raise RuntimeError(f"links are not permitted in maintenance bundle: {member.name!r}")
-              source.extractall(".", filter="data")
-          PY
-          rm -f \
-            tests/unit/maintenance/test_domain.py \
-            tests/unit/maintenance/test_postgres.py \
-            tests/unit/maintenance/test_service.py
-
-          # REINDEX CONCURRENTLY replaces the index relation and OID. Exact-plan
-          # replay must consult durable success before validating the new live OID.
-          python - <<'PY'
-          import base64
-          from pathlib import Path
-
-          backend_path = Path("src/postgres_mcp/maintenance/postgres.py")
-          backend = backend_path.read_text()
-          backend_start = backend.index("                        snapshot = await self._inspect_on_connection(connection, plan.target)")
-          backend_end = backend.index("                        record_started = True", backend_start)
-          backend_replacement = base64.b64decode("ICAgICAgICAgICAgICAgICAgICAgICAgbGVkZ2VyX2V4aXN0cyA9IGF3YWl0IHNlbGYuX2xlZGdlcl9leGlzdHMoY29ubmVjdGlvbikKICAgICAgICAgICAgICAgICAgICAgICAgZXhpc3Rpbmc6IGRpY3Rbc3RyLCBBbnldIHwgTm9uZSA9IE5vbmUKICAgICAgICAgICAgICAgICAgICAgICAgaWYgbGVkZ2VyX2V4aXN0czoKICAgICAgICAgICAgICAgICAgICAgICAgICAgIGF3YWl0IHNlbGYuX3ZhbGlkYXRlX2xlZGdlcihjb25uZWN0aW9uKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgZXhpc3RpbmcgPSBhd2FpdCBzZWxmLl9nZXRfYnlfbmFtZShjb25uZWN0aW9uLCBwbGFuLm5hbWUpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBpZiBleGlzdGluZyBpcyBub3QgTm9uZToKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBzdG9yZWRfcGxhbiA9IHNlbGYuX3ZlcmlmaWVkX3BsYW4oZXhpc3RpbmcpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgc3RvcmVkX3BsYW4ucmV2aWV3X2hhc2ggIT0gcGxhbi5yZXZpZXdfaGFzaDoKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcmFpc2UgTWFpbnRlbmFuY2VDb25mbGljdEVycm9yKAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZiJtYWludGVuYW5jZSBvcGVyYXRpb24ge3BsYW4ubmFtZSFyfSBhbHJlYWR5IGV4aXN0cyB3aXRoIGRpZmZlcmVudCByZXZpZXdlZCBjb250ZW50IgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgZXhpc3Rpbmdfc3RhdHVzID0gTWFpbnRlbmFuY2VPcGVyYXRpb25TdGF0dXMoc3RyKGV4aXN0aW5nWyJzdGF0dXMiXSkpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgZXhpc3Rpbmdfc3RhdHVzIGluIF9URVJNSU5BTF9TVUNDRVNTOgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICByZXR1cm4gTWFpbnRlbmFuY2VPcGVyYXRpb25SZXN1bHQoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBNYWludGVuYW5jZU9wZXJhdGlvblN0YXR1cy5BTFJFQURZX1NVQ0NFRURFRCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIF9yZWNvcmRfZnJvbV9yb3coZXhpc3RpbmcpLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICApCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgZXhpc3Rpbmdfc3RhdHVzIGluIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgTWFpbnRlbmFuY2VPcGVyYXRpb25TdGF0dXMuUlVOTklORywKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgTWFpbnRlbmFuY2VPcGVyYXRpb25TdGF0dXMuVU5LTk9XTiwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9OgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICByYWlzZSBNYWludGVuYW5jZUNvbmZsaWN0RXJyb3IoZiJtYWludGVuYW5jZSBvcGVyYXRpb24ge3BsYW4ubmFtZSFyfSBoYXMgYW4gdW5yZXNvbHZlZCBvdXRjb21lIikKCiAgICAgICAgICAgICAgICAgICAgICAgIHNuYXBzaG90ID0gYXdhaXQgc2VsZi5faW5zcGVjdF9vbl9jb25uZWN0aW9uKGNvbm5lY3Rpb24sIHBsYW4udGFyZ2V0KQogICAgICAgICAgICAgICAgICAgICAgICBzZWxmLl92ZXJpZnlfc25hcHNob3QocGxhbiwgc25hcHNob3QpCiAgICAgICAgICAgICAgICAgICAgICAgIGlmIG5vdCBsZWRnZXJfZXhpc3RzOgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYXdhaXQgc2VsZi5fZW5zdXJlX2xlZGdlcihjb25uZWN0aW9uKQogICAgICAgICAgICAgICAgICAgICAgICAgICAgYXdhaXQgc2VsZi5fdmFsaWRhdGVfbGVkZ2VyKGNvbm5lY3Rpb24pCiAgICAgICAgICAgICAgICAgICAgICAgIGlmIGV4aXN0aW5nIGlzIG5vdCBOb25lOgogICAgICAgICAgICAgICAgICAgICAgICAgICAgYWN0aXZlX3JvdyA9IGF3YWl0IHNlbGYuX3Jlc3RhcnRfcmVjb3JkKGNvbm5lY3Rpb24sIHBsYW4pCiAgICAgICAgICAgICAgICAgICAgICAgIGVsc2U6CiAgICAgICAgICAgICAgICAgICAgICAgICAgICBhY3RpdmVfcm93ID0gYXdhaXQgc2VsZi5faW5zZXJ0X3J1bm5pbmdfcmVjb3JkKGNvbm5lY3Rpb24sIHBsYW4pCg==").decode()
-          backend_path.write_text(backend[:backend_start] + backend_replacement + backend[backend_end:])
-
-          test_path = Path("tests/unit/maintenance/test_maintenance_postgres.py")
-          tests = test_path.read_text()
-          test_start = tests.index("    result = await adapter.apply(plan, timeout_seconds=30, lock_timeout_seconds=5)", tests.index("async def test_apply_is_idempotent_for_a_succeeded_reviewed_plan"))
-          test_end = tests.index("\n\n\n@pytest.mark.asyncio\nasync def test_apply_rejects", test_start)
-          test_replacement = base64.b64decode("ICAgIGluc3BlY3QgPSBBc3luY01vY2socmV0dXJuX3ZhbHVlPXNuYXBzaG90KG9pZD05OSkpCiAgICBtb25rZXlwYXRjaC5zZXRhdHRyKGFkYXB0ZXIsICJfaW5zcGVjdF9vbl9jb25uZWN0aW9uIiwgaW5zcGVjdCkKCiAgICByZXN1bHQgPSBhd2FpdCBhZGFwdGVyLmFwcGx5KHBsYW4sIHRpbWVvdXRfc2Vjb25kcz0zMCwgbG9ja190aW1lb3V0X3NlY29uZHM9NSkKCiAgICBhc3NlcnQgcmVzdWx0LnN0YXR1cyBpcyBNYWludGVuYW5jZU9wZXJhdGlvblN0YXR1cy5BTFJFQURZX1NVQ0NFRURFRAogICAgaW5zcGVjdC5hc3NlcnRfbm90X2F3YWl0ZWQoKQogICAgY3Vyc29yLmV4ZWN1dGUuYXNzZXJ0X25vdF9hd2FpdGVkKCkKICAgIGZpbmlzaC5hc3NlcnRfbm90X2F3YWl0ZWQoKQ==").decode()
-          test_path.write_text(tests[:test_start] + test_replacement + tests[test_end:])
-          PY
+        run: python .maintenance-transfer/source_transition.py
 
       - name: Install dependencies
         if: steps.source_bundle.outputs.present == 'true'
@@ -118,23 +64,17 @@ jobs:
         run: |
           set +e
           set -o pipefail
-
           uv run ruff format --check . 2>&1 | tee /tmp/maintenance-ruff-format.txt
           format_status=${PIPESTATUS[0]}
-
           uv run ruff check . 2>&1 | tee /tmp/maintenance-ruff-check.txt
           lint_status=${PIPESTATUS[0]}
-
           uv run pyright 2>&1 | tee /tmp/maintenance-pyright.txt
           pyright_status=${PIPESTATUS[0]}
-
           uv run pytest -q --junitxml=/tmp/maintenance-pytest.xml 2>&1 | tee /tmp/maintenance-pytest.txt
           pytest_status=${PIPESTATUS[0]}
-
           printf 'format=%s\nlint=%s\npyright=%s\npytest=%s\n' \
             "$format_status" "$lint_status" "$pyright_status" "$pytest_status" \
             | tee /tmp/maintenance-validation-status.txt
-
           if (( format_status != 0 || lint_status != 0 || pyright_status != 0 || pytest_status != 0 )); then
             exit 1
           fi
