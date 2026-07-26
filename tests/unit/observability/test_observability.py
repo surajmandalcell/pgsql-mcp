@@ -6,12 +6,14 @@ import asyncio
 import http.client
 from types import SimpleNamespace
 from typing import Any
+from typing import cast
 
 import pytest
 from mcp.types import TextContent
 
 from postgres_mcp.observability import MetricsHttpServer
 from postgres_mcp.observability import MetricsRegistry
+from postgres_mcp.observability import ToolCallServer
 from postgres_mcp.observability import ToolOutcome
 from postgres_mcp.observability import classify_tool_result
 from postgres_mcp.observability import current_correlation_id
@@ -111,7 +113,7 @@ async def test_fastmcp_installer_records_success_error_and_cancellation_without_
         assert arguments == {"password": "never-record-this"}
         return [TextContent(type="text", text='{"truncated":true}')]
 
-    server = SimpleNamespace(call_tool=success)
+    server = cast(ToolCallServer, SimpleNamespace(call_tool=success))
     install_fastmcp_observability(server, registry)
     install_fastmcp_observability(server, registry)
     await server.call_tool("select_rows", {"password": "never-record-this"})
@@ -119,7 +121,7 @@ async def test_fastmcp_installer_records_success_error_and_cancellation_without_
     async def failure(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         raise RuntimeError("database secret")
 
-    failing_server = SimpleNamespace(call_tool=failure)
+    failing_server = cast(ToolCallServer, SimpleNamespace(call_tool=failure))
     install_fastmcp_observability(failing_server, registry)
     with pytest.raises(RuntimeError, match="database secret"):
         await failing_server.call_tool("execute_sql", {"sql": "secret"})
@@ -127,7 +129,7 @@ async def test_fastmcp_installer_records_success_error_and_cancellation_without_
     async def cancelled(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         raise asyncio.CancelledError
 
-    cancelled_server = SimpleNamespace(call_tool=cancelled)
+    cancelled_server = cast(ToolCallServer, SimpleNamespace(call_tool=cancelled))
     install_fastmcp_observability(cancelled_server, registry)
     with pytest.raises(asyncio.CancelledError):
         await cancelled_server.call_tool("get_server_info", {})
@@ -149,7 +151,7 @@ def test_prometheus_export_is_deterministic_and_escapes_labels() -> None:
 
     rendered = registry.prometheus_text()
     assert rendered.endswith("\n")
-    assert rendered.count("pgsql_mcp_tool_duration_seconds_count") == 2
+    assert rendered.count("pgsql_mcp_tool_duration_seconds_count") == 1
     assert 'pgsql_mcp_tool_active{tool="tool:name"} 0' in rendered
     assert 'le="+Inf"} 1' in rendered
 

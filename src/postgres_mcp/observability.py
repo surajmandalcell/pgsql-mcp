@@ -165,8 +165,7 @@ class MetricsRegistry:
                         "duration_count": metrics.duration_count,
                         "duration_sum_seconds": metrics.duration_sum,
                         "duration_buckets": {
-                            _format_boundary(boundary): metrics.duration_buckets[index]
-                            for index, boundary in enumerate(_DURATION_BUCKETS)
+                            _format_boundary(boundary): metrics.duration_buckets[index] for index, boundary in enumerate(_DURATION_BUCKETS)
                         },
                         "truncated": metrics.truncated,
                         "rolled_back": metrics.rolled_back,
@@ -190,9 +189,7 @@ class MetricsRegistry:
             tool = _escape_label(str(item["tool"]))
             outcomes = item["outcomes"]
             for outcome in ToolOutcome:
-                lines.append(
-                    f'pgsql_mcp_tool_calls_total{{tool="{tool}",outcome="{outcome.value}"}} {outcomes[outcome.value]}'
-                )
+                lines.append(f'pgsql_mcp_tool_calls_total{{tool="{tool}",outcome="{outcome.value}"}} {outcomes[outcome.value]}')
         lines.extend(
             [
                 "# HELP pgsql_mcp_tool_active Active MCP tool calls.",
@@ -213,12 +210,8 @@ class MetricsRegistry:
             buckets = item["duration_buckets"]
             for boundary in _DURATION_BUCKETS:
                 label = _format_boundary(boundary)
-                lines.append(
-                    f'pgsql_mcp_tool_duration_seconds_bucket{{tool="{tool}",le="{label}"}} {buckets[label]}'
-                )
-            lines.append(
-                f'pgsql_mcp_tool_duration_seconds_bucket{{tool="{tool}",le="+Inf"}} {item["duration_count"]}'
-            )
+                lines.append(f'pgsql_mcp_tool_duration_seconds_bucket{{tool="{tool}",le="{label}"}} {buckets[label]}')
+            lines.append(f'pgsql_mcp_tool_duration_seconds_bucket{{tool="{tool}",le="+Inf"}} {item["duration_count"]}')
             lines.append(f'pgsql_mcp_tool_duration_seconds_sum{{tool="{tool}"}} {item["duration_sum_seconds"]:.9f}')
             lines.append(f'pgsql_mcp_tool_duration_seconds_count{{tool="{tool}"}} {item["duration_count"]}')
         lines.extend(
@@ -282,7 +275,8 @@ def classify_tool_result(result: Sequence[Any]) -> ClassifiedResult:
 
 def install_fastmcp_observability(server: ToolCallServer, registry: MetricsRegistry) -> ToolCallServer:
     """Instrument a FastMCP-compatible server once at its central call boundary."""
-    if getattr(server, "_pgsql_mcp_observability_installed", False):
+    server_object: Any = server
+    if getattr(server_object, "_pgsql_mcp_observability_installed", False):
         return server
     original_call = server.call_tool
 
@@ -306,8 +300,8 @@ def install_fastmcp_observability(server: ToolCallServer, registry: MetricsRegis
         )
         return result
 
-    setattr(server, "call_tool", observed_call)
-    setattr(server, "_pgsql_mcp_observability_installed", True)
+    server_object.call_tool = observed_call
+    server_object._pgsql_mcp_observability_installed = True
     return server
 
 
@@ -387,7 +381,7 @@ class MetricsHttpServer:
                 self.send_header("Content-Length", "0")
                 self.end_headers()
 
-            def log_message(self, format_string: str, *args: Any) -> None:
+            def log_message(self, format: str, *args: Any) -> None:
                 return
 
         self._server = ThreadingHTTPServer((self.host, self.port), Handler)
