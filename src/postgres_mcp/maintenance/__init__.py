@@ -19,6 +19,8 @@ from .domain import MaintenanceTarget
 from .domain import MaintenanceValidationError
 from .domain import ReconciliationResolution
 from .domain import TargetSnapshot
+from .domain import normalize_maintenance_review_hash
+from .domain import validate_maintenance_name
 from .postgres import LEDGER_TABLE_NAME
 from .postgres import PostgresMaintenanceBackend
 from .service import MaintenanceBackend
@@ -48,4 +50,6 @@ __all__ = [
     "PostgresMaintenanceBackend",
     "ReconciliationResolution",
     "TargetSnapshot",
+    "normalize_maintenance_review_hash",
+    "validate_maintenance_name",
 ]
