@@ -1,4 +1,4 @@
-name: Apply reviewed maintenance MCP surface on PR
+name: Apply reviewed maintenance source bundle
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-reviewed-maintenance-server-pr
+  group: apply-reviewed-maintenance-source-bundle
   cancel-in-progress: false
 
 jobs:
@@ -37,56 +37,61 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Apply the reviewed deterministic source transformation
+      - name: Verify and apply exact source patch
         shell: bash
         run: |
           set -euo pipefail
+          cat .maintenance-transfer/part-* > /tmp/maintenance.patch.gz.b64
           python - <<'PY'
           from pathlib import Path
-          from textwrap import dedent
+          import base64
+          import gzip
+          import hashlib
 
-          workflow = Path('.github/workflows/apply-maintenance-server.yml').read_text()
-          marker = "          python - <<'PY'\n"
-          source = workflow.split(marker, 1)[1].split("\n          PY", 1)[0]
-          exec(dedent(source), {"__name__": "__main__"})
+          encoded = Path('/tmp/maintenance.patch.gz.b64').read_text()
+          compressed = base64.b64decode(encoded, validate=True)
+          if hashlib.sha256(compressed).hexdigest() != '009316e75201f5eb1112dcffd97f774aa3add2cf27b297a571dc515ec40bcb25':
+              raise RuntimeError('compressed maintenance patch checksum mismatch')
+          patch = gzip.decompress(compressed)
+          if hashlib.sha256(patch).hexdigest() != 'e0821bc914e01f7cb7367057494adc8f1a395db3f8f61010d3237c91bda35923':
+              raise RuntimeError('maintenance patch checksum mismatch')
+          Path('/tmp/maintenance.patch').write_bytes(patch)
           PY
+          git apply --check /tmp/maintenance.patch
+          git apply /tmp/maintenance.patch
 
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
-
-      - name: Format and validate source-only changes
+      - name: Install dependencies and validate complete source
         shell: bash
         run: |
           set -euo pipefail
-          uv run ruff format \
-            src/postgres_mcp/maintenance \
-            src/postgres_mcp/server.py \
-            tests/unit/maintenance \
-            tests/unit/server/test_maintenance_tools.py \
-            tests/integration/maintenance/test_maintenance_integration.py
-          uv run ruff check --fix \
-            src/postgres_mcp/maintenance \
-            src/postgres_mcp/server.py \
-            tests/unit/maintenance \
-            tests/unit/server/test_maintenance_tools.py \
-            tests/integration/maintenance/test_maintenance_integration.py
+          uv sync --frozen --all-extras
+          uv run ruff format .
+          uv run ruff check --fix .
           uv run ruff format --check .
           uv run ruff check .
           uv run pyright
-          uv run pytest -q tests/unit/maintenance tests/unit/server/test_maintenance_tools.py
+          uv run pytest -q
 
-      - name: Commit validated source-only changes
+      - name: Commit exact validated source bundle
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          git add README.md docs/maintenance.md src/postgres_mcp/server.py \
-            src/postgres_mcp/maintenance tests/unit/maintenance \
-            tests/unit/server/test_maintenance_tools.py \
-            tests/integration/maintenance/test_maintenance_integration.py
+          rm -rf .maintenance-transfer
+          git add -A \
+            README.md \
+            docs/compatibility.md \
+            docs/maintenance.md \
+            src/postgres_mcp/lite_server.py \
+            src/postgres_mcp/maintenance \
+            src/postgres_mcp/server.py \
+            tests/integration/maintenance \
+            tests/unit/lite/test_lite_server.py \
+            tests/unit/maintenance \
+            .maintenance-transfer
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Expose reviewed nontransactional maintenance"
+          git commit -m "Complete reviewed nontransactional maintenance"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/reviewed-maintenance
