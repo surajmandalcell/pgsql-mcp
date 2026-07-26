@@ -183,18 +183,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Commit exact validated source bundle
+      - name: Commit validated source files
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .replication-transfer
-          rm .github/workflows/apply-replication-source.yml
-          git add -A -- \
-            .github/workflows/apply-replication-source.yml \
+          git add -- \
             .github/workflows/postgres-compatibility.yml \
-            .replication-transfer \
             README.md docs/compatibility.md docs/replication.md pyproject.toml \
             src/postgres_mcp/__init__.py src/postgres_mcp/ha_server.py \
             src/postgres_mcp/lite_server.py src/postgres_mcp/replication \
