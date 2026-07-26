@@ -1,0 +1,231 @@
+name: Apply extension capability profiles
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-extension-capability-profiles
+  cancel-in-progress: false
+
+jobs:
+  apply-validate-commit:
+    if: github.event.pull_request.head.ref == 'feature/extension-capability-profiles' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+
+      - name: Start Docker
+        run: |
+          set -euo pipefail
+          sudo service docker start || true
+          docker info
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: '0.6.9'
+
+      - name: Apply full-server extension profile surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              source = target.read_text()
+              if source.count(old) != 1:
+                  raise RuntimeError(f'expected exactly one match in {path}: {old[:80]!r}')
+              target.write_text(source.replace(old, new, 1))
+
+          replace_once(
+              'src/postgres_mcp/server.py',
+              'from .explain import ExplainPlanTool  # noqa: E402\n',
+              '''from .explain import ExplainPlanTool  # noqa: E402
+          from .extension_profiles import ExtensionProfileError  # noqa: E402
+          from .extension_profiles import PostgresExtensionProfileRepository  # noqa: E402
+          ''',
+          )
+          replace_once(
+              'src/postgres_mcp/server.py',
+              '''def get_migration_service() -> MigrationService:
+          ''',
+              '''def get_extension_profile_repository() -> PostgresExtensionProfileRepository:
+              """Build the bounded read-only extension inventory repository."""
+              return PostgresExtensionProfileRepository(
+                  get_base_sql_driver(),
+                  timeout_seconds=max(1.0, float(current_query_timeout)),
+              )
+
+
+          def get_migration_service() -> MigrationService:
+          ''',
+          )
+          replace_once(
+              'src/postgres_mcp/server.py',
+              '''            "migrations": {
+          ''',
+              '''            "extensions": {
+                  "dynamic_inventory": True,
+                  "unknown_extensions": "preserved_as_generic_catalog_profiles",
+                  "known_families": [
+                      "postgis",
+                      "timescaledb",
+                      "citus",
+                      "pgvector",
+                      "hypopg",
+                      "pg_stat_statements",
+                  ],
+                  "catalog_and_type_compatible": ["postgis", "timescaledb", "citus", "pgvector"],
+                  "specialized_tools": ["hypopg", "pg_stat_statements"],
+              },
+              "migrations": {
+          ''',
+          )
+          replace_once(
+              'src/postgres_mcp/server.py',
+              '''@mcp.tool(description="Search relations, routines, types, collations, and extensions")
+          ''',
+              '''@mcp.tool(description="List installed or available PostgreSQL extension capability profiles")
+          async def get_extension_profiles(
+              include_available: Annotated[
+                  bool,
+                  Field(description="Include extensions available to install but not currently installed"),
+              ] = False,
+          ) -> ResponseType:
+              """Return a bounded, read-only extension support inventory."""
+              try:
+                  snapshot = await get_extension_profile_repository().snapshot(include_available=include_available)
+                  return format_text_response(snapshot.to_payload())
+              except ExtensionProfileError as exc:
+                  return format_error_response(str(exc))
+              except Exception as exc:
+                  logger.exception("Unexpected extension profile error")
+                  return format_error_response(str(exc))
+
+
+          @mcp.tool(description="Search relations, routines, types, collations, and extensions")
+          ''',
+          )
+
+          replace_once(
+              'tests/unit/extensions/test_extension_profiles.py',
+              '''def test_snapshot_payload_reports_installed_available_and_support_contracts() -> None:
+              driver = AsyncMock()
+              driver.execute_bounded_query.side_effect = [
+                  result(
+                      [
+                          {
+                              "name": "hypopg",
+                              "installed_version": "1.4.1",
+                              "default_version": "1.4.1",
+                              "schema_name": "public",
+                              "comment": "Hypothetical indexes",
+                          },
+                          {
+                              "name": "postgis",
+                              "installed_version": "3.5.0",
+                              "default_version": "3.5.0",
+                              "schema_name": "extensions",
+                              "comment": "Spatial types",
+                          },
+                      ]
+                  ),
+                  result(
+                      [
+                          {"name": "future_extension", "default_version": "9.1", "comment": None},
+                          {"name": "postgis", "default_version": "3.5.0", "comment": "duplicate available row"},
+                          {"name": "vector", "default_version": "0.8.0", "comment": "Vector type"},
+                      ],
+                      truncated=True,
+                  ),
+              ]
+              repository = PostgresExtensionProfileRepository(driver, timeout_seconds=4.5)
+
+              snapshot = pytest.run(async_fn=repository.snapshot(include_available=True)) if False else None
+              assert snapshot is None
+
+
+          ''',
+              '',
+          )
+
+          replace_once(
+              'README.md',
+              '- **Schema intelligence** — inspect schemas, tables, views, sequences, columns, constraints, indexes, comments, and extensions.\n',
+              '- **Schema intelligence** — inspect schemas, tables, views, sequences, columns, constraints, indexes, comments, and extensions.\n- **Extension profiles** — inventory known and unknown installed extensions with honest catalog, type, and specialized-tool support tiers.\n',
+          )
+          replace_once(
+              'README.md',
+              '| `get_server_info` | Report PostgreSQL version, role, recovery, locale, and extensions |\n',
+              '| `get_server_info` | Report PostgreSQL version, role, recovery, locale, and extensions |\n| `get_extension_profiles` | List bounded installed or available extension capability profiles |\n',
+          )
+          replace_once(
+              'README.md',
+              'reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), and the version support contract in [docs/compatibility.md](docs/compatibility.md).',
+              'reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), extension profiles in [docs/extensions.md](docs/extensions.md), and the version support contract in [docs/compatibility.md](docs/compatibility.md).',
+          )
+          PY
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Normalize and validate complete source
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run ruff format \
+            src/postgres_mcp/extension_profiles.py \
+            src/postgres_mcp/server.py \
+            tests/unit/extensions \
+            tests/unit/server/test_extension_profile_tools.py \
+            tests/integration/extensions
+          uv run ruff check --fix \
+            src/postgres_mcp/extension_profiles.py \
+            src/postgres_mcp/server.py \
+            tests/unit/extensions \
+            tests/unit/server/test_extension_profile_tools.py \
+            tests/integration/extensions
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+          uv run pytest -q
+
+      - name: Commit validated source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- \
+            README.md docs/extensions.md \
+            src/postgres_mcp/extension_profiles.py src/postgres_mcp/server.py \
+            tests/integration/extensions tests/unit/extensions \
+            tests/unit/server/test_extension_profile_tools.py
+          git diff --cached --check
+          if [ -n "$(git diff --name-only)" ] || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            git status --short
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Expose extension capability profiles'
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/extension-capability-profiles
