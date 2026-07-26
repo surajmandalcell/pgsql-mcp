@@ -259,8 +259,6 @@ def classify_tool_result(result: Sequence[Any]) -> ClassifiedResult:
             payload = json.loads(stripped)
         except json.JSONDecodeError:
             continue
-        if not isinstance(payload, dict):
-            continue
         status = str(payload.get("outcome") or payload.get("status") or "").lower()
         if status == "unknown":
             outcome = ToolOutcome.UNKNOWN
