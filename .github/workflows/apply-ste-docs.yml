@@ -155,6 +155,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          uv run ruff format scripts/check_ste_docs.py
+          uv run ruff check --fix scripts/check_ste_docs.py
           python scripts/check_ste_docs.py .
           uv run ruff format --check .
           uv run ruff check .
