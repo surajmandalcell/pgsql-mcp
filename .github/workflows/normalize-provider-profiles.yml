@@ -43,6 +43,9 @@ jobs:
         with:
           version: "0.6.9"
 
+      - name: Apply MCP and compatibility surface
+        run: python scripts/apply_provider_profiles.py
+
       - name: Install complete dependency set
         run: uv sync --frozen --all-extras
 
@@ -50,12 +53,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run ruff format src/postgres_mcp/provider_profiles.py tests/unit/providers
-          uv run ruff check --fix src/postgres_mcp/provider_profiles.py tests/unit/providers
+          uv run ruff format scripts/apply_provider_profiles.py src/postgres_mcp/provider_profiles.py src/postgres_mcp/server.py tests/unit/providers tests/unit/server/test_provider_profile_tools.py tests/integration/providers
+          uv run ruff check --fix scripts/apply_provider_profiles.py src/postgres_mcp/provider_profiles.py src/postgres_mcp/server.py tests/unit/providers tests/unit/server/test_provider_profile_tools.py tests/integration/providers
           uv run ruff format --check .
           uv run ruff check .
           uv run pyright
-          uv run pytest -q tests/unit/providers
+          uv run pytest -q tests/unit/providers tests/unit/server/test_provider_profile_tools.py tests/integration/providers
           uv run pytest -q
 
       - name: Commit exact normalized source
@@ -64,12 +67,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add -- src/postgres_mcp/provider_profiles.py tests/unit/providers
+          git add -- README.md .github/workflows/postgres-compatibility.yml scripts/apply_provider_profiles.py src/postgres_mcp/provider_profiles.py src/postgres_mcp/server.py tests/unit/providers tests/unit/server/test_provider_profile_tools.py tests/integration/providers
           git diff --cached --check
-          if git diff --cached --quiet; then
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Normalize provider capability profiles"
+          git commit -m "Expose provider capability profiles"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/provider-capability-profiles
