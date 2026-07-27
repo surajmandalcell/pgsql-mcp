@@ -9,6 +9,12 @@ def replace_once(path: str, old: str, new: str) -> None:
     target.write_text(source.replace(old, new, 1))
 
 
+replace_once(
+    "src/postgres_mcp/pgvector_diagnostics.py",
+    "member.objid = ANY(index.indclass))",
+    "member.objid = ANY(index.indclass::oid[]))",
+)
+
 server = "src/postgres_mcp/server.py"
 replace_once(
     server,
