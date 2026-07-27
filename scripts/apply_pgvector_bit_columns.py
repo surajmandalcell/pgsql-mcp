@@ -156,7 +156,7 @@ replace_once(
 ''',
     '''                        embedding vector(3) NOT NULL,
                         compact halfvec(3),
-                        binary bit(8)
+                        fingerprint bit(8)
 ''',
 )
 replace_once(
@@ -180,9 +180,9 @@ replace_once(
                 )
                 await cursor.execute(
                     """
-                    CREATE INDEX items_binary_hnsw_idx
+                    CREATE INDEX items_fingerprint_hnsw_idx
                     ON pgvector_contract.items
-                    USING hnsw (binary bit_hamming_ops)
+                    USING hnsw (fingerprint bit_hamming_ops)
                     """
                 )
 ''',
@@ -196,8 +196,8 @@ replace_once(
 ''',
     '''        assert columns[("pgvector_contract", "items", "compact")].type_name == "halfvec"
         assert columns[("pgvector_contract", "items", "compact")].dimensions == 3
-        assert columns[("pgvector_contract", "items", "binary")].type_name == "bit"
-        assert columns[("pgvector_contract", "items", "binary")].dimensions == 8
+        assert columns[("pgvector_contract", "items", "fingerprint")].type_name == "bit"
+        assert columns[("pgvector_contract", "items", "fingerprint")].dimensions == 8
 
         index = next(item for item in first.indexes if item.name == "items_embedding_hnsw_idx")
 ''',
@@ -209,9 +209,9 @@ replace_once(
 ''',
     '''        assert index.ready is True
 
-        binary_index = next(item for item in first.indexes if item.name == "items_binary_hnsw_idx")
-        assert binary_index.access_method == "hnsw"
-        assert binary_index.operator_classes == ("bit_hamming_ops",)
+        bit_index = next(item for item in first.indexes if item.name == "items_fingerprint_hnsw_idx")
+        assert bit_index.access_method == "hnsw"
+        assert bit_index.operator_classes == ("bit_hamming_ops",)
         assert first.findings == ()
 ''',
 )
