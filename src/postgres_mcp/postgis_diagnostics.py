@@ -90,7 +90,7 @@ ORDER BY relation_namespace.nspname, relation.relname, index_relation.relname
 
 _SPATIAL_TYPE = re.compile(
     r'^(?:(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)\.)?'
-    r"(geometry|geography|raster)(?:\(([A-Za-z0-9_]+),(-?[0-9]+)\))?$"
+    r"(geometry|geography|raster)(?:\(([A-Za-z0-9_]+)(?:,(-?[0-9]+))?\))?$"
 )
 
 _KNOWN_OPERATOR_CLASSES = frozenset(
@@ -252,7 +252,7 @@ def parse_spatial_typmod(formatted_type: str) -> SpatialTypmod:
     srid_token = match.group(3)
     if shape_token is None:
         return SpatialTypmod(base_type, None, None, None)
-    if base_type == "raster" or srid_token is None:
+    if base_type == "raster":
         raise PostgisCatalogError("spatial type modifier is malformed")
 
     upper = shape_token.upper()
@@ -265,8 +265,8 @@ def parse_spatial_typmod(formatted_type: str) -> SpatialTypmod:
         dimensions = 3
     if not upper:
         raise PostgisCatalogError("spatial type shape is malformed")
-    srid = int(srid_token)
-    if srid < -1:
+    srid = int(srid_token) if srid_token is not None else None
+    if srid is not None and srid < -1:
         raise PostgisCatalogError("spatial type SRID is invalid")
     return SpatialTypmod(base_type, upper, srid, dimensions)
 

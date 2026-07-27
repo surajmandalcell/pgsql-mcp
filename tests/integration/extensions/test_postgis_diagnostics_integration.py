@@ -49,11 +49,7 @@ async def test_postgis_columns_and_gist_index_use_only_catalog_metadata() -> Non
         assert first.identity.installed_version
         assert first.truncated is False
 
-        columns = {
-            (column.schema, column.relation, column.column): column
-            for column in first.columns
-            if column.schema == "postgis_contract"
-        }
+        columns = {(column.schema, column.relation, column.column): column for column in first.columns if column.schema == "postgis_contract"}
         geom = columns[("postgis_contract", "places", "geom")]
         assert geom.type_name == "geometry"
         assert geom.shape == "POINT"

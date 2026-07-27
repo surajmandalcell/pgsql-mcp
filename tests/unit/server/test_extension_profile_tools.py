@@ -94,6 +94,14 @@ async def test_capabilities_advertise_extension_profiles_without_claiming_full_e
             "max_objects": 500,
             "unknown_object_types": "preserved",
         },
+        "postgis_diagnostics": {
+            "read_only": True,
+            "core_catalogs_only": True,
+            "extension_functions_called": False,
+            "max_items": 500,
+            "types": ["geometry", "geography", "raster"],
+            "index_methods": ["gist", "spgist", "brin"],
+        },
     }
 
 
