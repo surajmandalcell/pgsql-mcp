@@ -334,6 +334,8 @@ def _column(row: dict[str, Any]) -> PostgisColumn:
         raise PostgisCatalogError("PostGIS column type is not supported")
     formatted_type = _text(row, "formatted_type", maximum=256)
     typmod = parse_spatial_typmod(formatted_type)
+    if typmod.base_type != type_name:
+        raise PostgisCatalogError("PostGIS column type must match its formatted type")
     return PostgisColumn(
         schema=_text(row, "schema_name", maximum=63),
         relation=_text(row, "relation_name", maximum=63),
