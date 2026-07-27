@@ -38,7 +38,7 @@ replace_once(
     '                    "core_catalogs_only": True,\n'
     '                    "max_objects": 500,\n'
     '                    "unknown_object_types": "preserved",\n'
-    '                },\n',
+    "                },\n",
 )
 marker = '@mcp.tool(description="Search relations, routines, types, collations, and extensions")\n'
 tool = '''@mcp.tool(description="Inventory PostgreSQL objects owned by one installed extension through core catalogs")
@@ -66,26 +66,23 @@ replace_once(server, marker, tool + marker)
 capability_test = "tests/unit/server/test_extension_profile_tools.py"
 replace_once(
     capability_test,
-    '        "specialized_tools": ["hypopg", "pg_stat_statements"],\n'
-    "    }\n",
+    '        "specialized_tools": ["hypopg", "pg_stat_statements"],\n    }\n',
     '        "specialized_tools": ["hypopg", "pg_stat_statements"],\n'
     '        "object_inventory": {\n'
     '            "generic": True,\n'
     '            "core_catalogs_only": True,\n'
     '            "max_objects": 500,\n'
     '            "unknown_object_types": "preserved",\n'
-    '        },\n'
+    "        },\n"
     "    }\n",
 )
 
 readme = "README.md"
 extension_feature = (
-    "- **Extension profiles** — inventory known and unknown installed extensions "
-    "with honest catalog, type, and specialized-tool support tiers.\n"
+    "- **Extension profiles** — inventory known and unknown installed extensions with honest catalog, type, and specialized-tool support tiers.\n"
 )
 object_feature = (
-    "- **Extension objects** — inventory every registered object owned by any installed extension "
-    "through PostgreSQL core dependency catalogs.\n"
+    "- **Extension objects** — inventory every registered object owned by any installed extension through PostgreSQL core dependency catalogs.\n"
 )
 replace_once(readme, extension_feature, extension_feature + object_feature)
 replace_once(
