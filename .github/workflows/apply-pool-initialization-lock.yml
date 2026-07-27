@@ -1,0 +1,74 @@
+name: Apply concurrent pool initialization fix
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-concurrent-pool-initialization
+  cancel-in-progress: false
+
+jobs:
+  apply-validate-commit:
+    if: github.event.pull_request.head.ref == 'fix/concurrent-pool-initialization' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout exact PR head without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Start and verify Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo service docker start || true
+          docker info
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Apply initialization lock
+        run: python scripts/apply_pool_initialization_lock.py
+
+      - name: Install complete dependency set
+        run: uv sync --frozen --all-extras
+
+      - name: Normalize and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run ruff format scripts/apply_pool_initialization_lock.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
+          uv run ruff check --fix scripts/apply_pool_initialization_lock.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+          uv run pytest -q
+
+      - name: Commit validated implementation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- scripts/apply_pool_initialization_lock.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Serialize concurrent pool initialization"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:fix/concurrent-pool-initialization
