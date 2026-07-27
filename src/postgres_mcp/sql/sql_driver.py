@@ -78,42 +78,48 @@ class DbConnPool:
         self.connection_url = connection_url
         self.min_size = min_size
         self.max_size = max_size
-        self.pool: AsyncConnectionPool | None = None
+        self.pool: AsyncConnectionPool[Any] | None = None
         self._is_valid = False
         self._last_error: str | None = None
+        self._initialization_lock = asyncio.Lock()
 
-    async def pool_connect(self, connection_url: str | None = None) -> AsyncConnectionPool:
-        """Initialize and verify the connection pool."""
+    async def pool_connect(self, connection_url: str | None = None) -> AsyncConnectionPool[Any]:
+        """Initialize and verify the connection pool exactly once under concurrency."""
         if self.pool and self._is_valid:
             return self.pool
 
-        url = connection_url or self.connection_url
-        self.connection_url = url
-        if not url:
-            self._is_valid = False
-            self._last_error = "Database connection URL not provided"
-            raise ValueError(self._last_error)
+        async with self._initialization_lock:
+            if self.pool and self._is_valid:
+                return self.pool
 
-        await self.close()
-        try:
-            self.pool = AsyncConnectionPool(
-                conninfo=url,
-                min_size=self.min_size,
-                max_size=self.max_size,
-                open=False,
-            )
-            await self.pool.open()
-            async with self.pool.connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT 1")
-            self._is_valid = True
-            self._last_error = None
-            return self.pool
-        except Exception as exc:
-            self._is_valid = False
-            self._last_error = str(exc)
+            url = connection_url or self.connection_url
+            self.connection_url = url
+            if not url:
+                self._is_valid = False
+                self._last_error = "Database connection URL not provided"
+                raise ValueError(self._last_error)
+
             await self.close()
-            raise ValueError(f"Connection attempt failed: {obfuscate_password(str(exc))}") from exc
+            try:
+                candidate: AsyncConnectionPool[Any] = AsyncConnectionPool(
+                    conninfo=url,
+                    min_size=self.min_size,
+                    max_size=self.max_size,
+                    open=False,
+                )
+                self.pool = candidate
+                await candidate.open()
+                async with candidate.connection() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute("SELECT 1")
+                self._is_valid = True
+                self._last_error = None
+                return candidate
+            except Exception as exc:
+                self._is_valid = False
+                self._last_error = str(exc)
+                await self.close()
+                raise ValueError(f"Connection attempt failed: {obfuscate_password(str(exc))}") from exc
 
     async def close(self) -> None:
         """Close the pool and clear reusable state."""
