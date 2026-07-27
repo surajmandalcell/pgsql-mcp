@@ -89,6 +89,38 @@ async def test_concurrent_first_use_initializes_exactly_one_pool(monkeypatch: py
 
 
 @pytest.mark.asyncio
+async def test_close_waits_for_initialization_then_closes_verified_pool(monkeypatch: pytest.MonkeyPatch) -> None:
+    open_started = asyncio.Event()
+    release_open = asyncio.Event()
+    created: list[ControlledPool] = []
+
+    def pool_factory(**_kwargs: Any) -> ControlledPool:
+        candidate = ControlledPool(open_started=open_started, release_open=release_open)
+        created.append(candidate)
+        return candidate
+
+    monkeypatch.setattr("postgres_mcp.sql.sql_driver.AsyncConnectionPool", pool_factory)
+    pool = DbConnPool("postgresql://example.invalid/app", min_size=0, max_size=1)
+
+    opening = asyncio.create_task(pool.pool_connect())
+    await open_started.wait()
+    closing = asyncio.create_task(pool.close())
+    await asyncio.sleep(0)
+
+    assert closing.done() is False
+    assert created[0].close_calls == 0
+
+    release_open.set()
+    verified = await opening
+    await closing
+
+    assert verified is created[0]
+    assert created[0].close_calls == 1
+    assert pool.pool is None
+    assert pool.is_valid is False
+
+
+@pytest.mark.asyncio
 async def test_failed_initialization_releases_lock_for_clean_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     releases = [asyncio.Event(), asyncio.Event()]
     for release in releases:
