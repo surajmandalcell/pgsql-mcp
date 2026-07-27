@@ -38,6 +38,7 @@ Read [the security model](docs/security.md) before production use.
 - Report provider capabilities from explicit hints or strong catalog markers.
 - List installed and available extension profiles.
 - Inventory objects that belong to an installed extension.
+- Report pgvector columns and indexes from PostgreSQL core catalogs.
 - Explain queries and analyze index opportunities.
 - Publish privacy-preserving runtime metrics.
 
@@ -91,6 +92,7 @@ docker run -i --rm \
 - The lite server returns at most 500 rows.
 - Typed data operations return at most 500 rows.
 - Extension object inventories return at most 500 objects.
+- pgvector diagnostics return at most 500 combined columns and indexes.
 - Server-side cursors fetch only the visible row ceiling plus one row.
 - Query, lock, and idle-transaction timeouts apply inside protected operations.
 
@@ -112,6 +114,7 @@ docker run -i --rm \
 | `get_postgres_type` | Inspect one PostgreSQL type |
 | `get_extension_profiles` | List extension capability profiles |
 | `get_extension_objects` | List objects that belong to one extension |
+| `get_pgvector_diagnostics` | Report bounded pgvector columns and indexes |
 | `get_deployment_profile` | Report provider capabilities without secrets |
 
 ### SQL and data
