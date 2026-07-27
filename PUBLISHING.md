@@ -1,13 +1,18 @@
 # Publishing
 
-Use this procedure to publish a release.
+Use this procedure to publish a release from a verified `main` commit.
+
+GitHub Actions validate package and container builds after each update to `main`.
+
+GitHub Actions do not publish packages or container images.
 
 ## Release requirements
 
-- `main` must be green.
+- All `main` jobs must pass.
 - The working tree must be clean.
+- The local commit must match the selected `main` commit.
 - The version must match the release tag.
-- The changelog text must describe user-visible changes.
+- The release notes must describe user-visible changes.
 - Package and container budgets must pass.
 - PostgreSQL compatibility jobs must pass.
 
@@ -18,9 +23,9 @@ uv sync --all-extras
 uv build
 ```
 
-Inspect the generated wheel and source archive.
+Inspect the wheel and source archive.
 
-Do not publish a package that contains credentials, transfer files, or temporary workflows.
+Do not publish credentials, transfer files, or temporary workflows.
 
 ## Test the package
 
@@ -31,12 +36,33 @@ Do not publish a package that contains credentials, transfer files, or temporary
 5. Run `pgsql-mcp-ha --help`.
 6. Run a read-only smoke test against a disposable PostgreSQL database.
 
-## Publish
+## Publish the Python package
 
-Create the signed release tag only after all checks pass.
+Configure an approved PyPI token or trusted local publishing identity.
 
-Publish the Python package through the approved release workflow.
+```bash
+uv publish dist/*
+```
 
-Publish the container image through the approved container workflow.
+Verify the public package name, version, files, license, and description.
 
-Verify the public package metadata after publication.
+## Publish the container image
+
+Build the image from the same verified commit.
+
+```bash
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --tag "$DOCKERHUB_USERNAME/pgsql-mcp:$VERSION" \
+  --tag "$DOCKERHUB_USERNAME/pgsql-mcp:latest" \
+  --push \
+  .
+```
+
+Verify the public image digest and platform list.
+
+## Create the release
+
+Create a signed tag only after package and container verification.
+
+Create the release notes from the same commit.

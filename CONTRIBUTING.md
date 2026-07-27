@@ -19,7 +19,7 @@ Use this process for each change.
 
 Do not weaken an existing safety test to make new code pass.
 
-## Required gates
+## Required local gates
 
 ```bash
 uv run ruff format --check .
@@ -35,21 +35,25 @@ Database behavior requires real PostgreSQL integration tests.
 
 Compatibility-sensitive behavior requires PostgreSQL 14 through PostgreSQL 18.
 
+GitHub Actions do not run on pull requests.
+
+GitHub Actions verify each commit after it reaches `main`.
+
 ## Commit rules
 
-- Use clear imperative commit subjects.
-- Keep generated transfer files out of final pull requests.
+- Use a clear imperative commit subject.
+- Keep generated transfer files out of final changes.
 - Do not commit credentials, database URLs, or test secrets.
 - Keep documentation consistent with the final code.
-- Use ASD-STE100 style for Markdown prose.
+- Use the repository ASD-STE100 project profile for scoped text.
 
 ## Pull request rules
 
 1. Describe the bounded context.
 2. Describe the test-first sequence.
 3. List safety invariants.
-4. List validation results.
+4. List local validation results.
 5. Resolve all review threads.
-6. Merge only a source-only green head.
+6. Merge only after all required local gates pass.
 
-Use squash merge unless the change needs preserved commit structure.
+Use squash merge unless the change requires preserved commit structure.

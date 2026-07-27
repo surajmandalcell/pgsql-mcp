@@ -1,8 +1,8 @@
 # Project plan
 
-This plan records the remaining product work.
+This plan separates the verified release scope from future roadmap work.
 
-## Completed foundations
+## Verified release scope
 
 - Safe bounded SQL execution.
 - Guarded atomic transactions.
@@ -20,18 +20,22 @@ This plan records the remaining product work.
 - Extension and provider profiles.
 - Pool and cancellation stress gates.
 - Generic extension object inventory.
+- PostGIS catalog and index diagnostics.
+- pgvector catalog and index diagnostics.
+- Repository ASD-STE100 project profile.
 
-## Active priorities
+## Future roadmap
 
-1. Apply ASD-STE100 style to all repository Markdown.
-2. Add read-only pgvector catalog and index diagnostics.
-3. Add PostGIS catalog contracts.
-4. Add TimescaleDB catalog contracts.
-5. Add Citus catalog contracts.
-6. Add resumable nontransactional migration stages.
-7. Expand adapter mutation testing.
-8. Increase historical-module branch coverage.
+1. Add TimescaleDB-specific catalog diagnostics.
+2. Add Citus-specific catalog diagnostics.
+3. Add resumable nontransactional migration stages.
+4. Expand adapter mutation testing.
+5. Increase historical-module branch coverage.
+
+Roadmap items are not guarantees for the current release.
 
 ## Release principle
 
-A feature is complete only when its source-only head passes all required gates.
+A release feature is complete only when its source passes all required local gates.
+
+Main branch jobs verify the merged commit again.

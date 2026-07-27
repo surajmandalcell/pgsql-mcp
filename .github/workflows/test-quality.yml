@@ -1,17 +1,14 @@
 name: Test quality
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: test-quality-${{ github.workflow }}-${{ github.ref }}
+  group: test-quality-main
   cancel-in-progress: true
 
 jobs:
@@ -23,6 +20,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Set up Python
@@ -42,14 +40,13 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Install project dependencies
+      - name: Install complete dependency set
         run: uv sync --frozen --all-extras
 
       - name: Run branch coverage
         shell: bash
         run: |
           set -euo pipefail
-          set -o pipefail
           uv run --with 'coverage[toml]>=7.6,<8' coverage run \
             --branch \
             --source=postgres_mcp \
@@ -67,12 +64,15 @@ jobs:
           uv run --with 'coverage[toml]>=7.6,<8' coverage json -o coverage.json
 
       - name: Enforce changed-line coverage
-        if: github.event_name == 'pull_request'
+        if: github.event.before != '0000000000000000000000000000000000000000'
         shell: bash
+        env:
+          PREVIOUS_MAIN_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
+          git branch coverage-base "$PREVIOUS_MAIN_SHA"
           uv run --with 'diff-cover>=9,<10' diff-cover coverage.xml \
-            --compare-branch=origin/${{ github.base_ref }} \
+            --compare-branch=coverage-base \
             --fail-under=100 \
             --html-report diff-coverage.html \
             | tee diff-coverage.txt

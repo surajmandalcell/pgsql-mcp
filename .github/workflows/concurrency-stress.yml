@@ -1,8 +1,6 @@
 name: Concurrency stress
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
@@ -10,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: concurrency-stress-${{ github.workflow }}-${{ github.ref }}
+  group: concurrency-stress-main
   cancel-in-progress: true
 
 jobs:
@@ -22,7 +20,7 @@ jobs:
       PGSQL_MCP_TEST_POSTGRES_IMAGE: postgres:16
 
     steps:
-      - name: Checkout code without persisted credentials
+      - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false

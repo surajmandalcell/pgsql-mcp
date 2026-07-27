@@ -1,17 +1,14 @@
 name: Safety mutation gate
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: safety-mutation-${{ github.workflow }}-${{ github.ref }}
+  group: safety-mutation-main
   cancel-in-progress: true
 
 jobs:
@@ -20,7 +17,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout code without persisted credentials
+      - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
@@ -39,10 +36,10 @@ jobs:
       - name: Install complete dependency set
         run: uv sync --frozen --all-extras
 
-      - name: Validate mutation tooling and numeric boundary regression
+      - name: Validate mutation tools and numeric boundaries
         run: uv run pytest -q tests/unit/mutation/test_safety_mutations.py tests/unit/sql/test_results.py
 
-      - name: Kill every declared safety mutant
+      - name: Kill all declared safety mutants
         shell: bash
         run: |
           set -euo pipefail

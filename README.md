@@ -1,47 +1,47 @@
 # pgsql-mcp
 
-`pgsql-mcp` is a PostgreSQL Model Context Protocol server.
+<p align="center">
+  <strong>A controlled PostgreSQL operations layer for Model Context Protocol clients.</strong>
+</p>
 
-It provides safe SQL access, catalog inspection, reviewed changes, diagnostics, and release-quality checks.
+<p align="center">
+  <a href="https://github.com/surajmandalcell/pgsql-mcp/actions/workflows/build.yml"><img alt="Main CI" src="https://github.com/surajmandalcell/pgsql-mcp/actions/workflows/build.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/surajmandalcell/pgsql-mcp/actions/workflows/postgres-compatibility.yml"><img alt="PostgreSQL compatibility" src="https://github.com/surajmandalcell/pgsql-mcp/actions/workflows/postgres-compatibility.yml/badge.svg?branch=main"></a>
+  <a href="https://github.com/surajmandalcell/pgsql-mcp/actions/workflows/ste-docs.yml"><img alt="ASD-STE100 profile" src="https://github.com/surajmandalcell/pgsql-mcp/actions/workflows/ste-docs.yml/badge.svg?branch=main"></a>
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-0f62fe?style=flat-square">
+  <img alt="PostgreSQL 14 through 18" src="https://img.shields.io/badge/PostgreSQL-14--18-0f62fe?style=flat-square">
+  <img alt="MIT license" src="https://img.shields.io/badge/License-MIT-161616?style=flat-square">
+</p>
 
-## Safety defaults
+`pgsql-mcp` gives MCP clients safe PostgreSQL inspection, bounded SQL, reviewed changes, and operational diagnostics.
 
-The full server starts in restricted mode.
+The server starts in restricted mode. Write tools require an explicit unrestricted configuration.
 
-Restricted mode permits one validated read-only statement.
+<p align="center">
+  <img src="docs/assets/pgsql-mcp-architecture.svg" alt="pgsql-mcp system architecture" width="100%">
+</p>
 
-The server applies database-enforced read-only transactions, timeouts, row limits, and native parameters.
+## Why use pgsql-mcp
 
-Write tools are available only when you set `--access-mode=unrestricted`.
+| Control | Behavior | Evidence |
+|---|---|---|
+| Safe default | Restricted mode permits bounded read operations | Database read-only transactions and SQL validation |
+| Reviewed change | Migration and maintenance plans require a review hash | Durable ledgers and commit guards |
+| Bounded output | Public tools apply row, time, and result limits | Server-side cursors and hard ceilings |
+| Broad catalog | Core catalogs expose relations, types, extensions, and providers | OID-backed identities and deterministic results |
+| Release quality | Main commits run the complete quality system | Tests, coverage, mutation, stress, and compatibility jobs |
+
+## Safety boundary
 
 Use a dedicated PostgreSQL role with the minimum required privileges.
 
+Use `stdio` for local clients when possible. Put remote transports behind authentication and transport encryption.
+
+<p align="center">
+  <img src="docs/assets/pgsql-mcp-safety-flow.svg" alt="pgsql-mcp request safety flow" width="100%">
+</p>
+
 Read [the security model](docs/security.md) before production use.
-
-## Server profiles
-
-| Command | Purpose |
-|---|---|
-| `pgsql-mcp` | Full server with restricted and unrestricted modes |
-| `pgsql-mcp-lite` | Six-tool read-only server with a two-connection pool |
-| `pgsql-mcp-ha` | Three-tool read-only replication and failover server |
-
-## Main capabilities
-
-- Inspect schemas, relations, routines, types, privileges, policies, and partitions.
-- Execute bounded read-only SQL with native parameters.
-- Execute guarded atomic transactions in unrestricted mode.
-- Plan, apply, inspect, and roll back reviewed transactional migrations.
-- Plan, apply, inspect, and reconcile reviewed maintenance operations.
-- Select and change rows through typed structured requests.
-- Inspect replication topology and failover readiness.
-- Report provider capabilities from explicit hints or strong catalog markers.
-- List installed and available extension profiles.
-- Inventory objects that belong to an installed extension.
-- Report PostGIS columns and spatial indexes from PostgreSQL core catalogs.
-- Report pgvector columns and indexes from PostgreSQL core catalogs.
-- Explain queries and analyze index opportunities.
-- Publish privacy-preserving runtime metrics.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ DATABASE_URI='postgresql://readonly_user:password@localhost:5432/app' \
 uvx pgsql-mcp
 ```
 
-Use unrestricted mode only for a controlled development database.
+Use unrestricted mode only for a controlled environment.
 
 ```bash
 DATABASE_URI='postgresql://developer:password@localhost:5432/app_dev' \
@@ -61,7 +61,7 @@ uvx pgsql-mcp --access-mode=unrestricted
 
 Do not use a production owner or superuser role.
 
-## MCP configuration
+### MCP configuration
 
 ```json
 {
@@ -77,9 +77,7 @@ Do not use a production owner or superuser role.
 }
 ```
 
-Restricted mode is the default for this configuration.
-
-## Docker
+### Docker
 
 ```bash
 docker run -i --rm \
@@ -87,90 +85,92 @@ docker run -i --rm \
   pgsql-mcp
 ```
 
-## Important limits
+## Server profiles
 
-- The full server returns at most 5,000 rows.
-- The lite server returns at most 500 rows.
-- Typed data operations return at most 500 rows.
-- Extension object inventories return at most 500 objects.
-- PostGIS diagnostics return at most 500 combined columns and indexes.
-- pgvector diagnostics return at most 500 combined columns and indexes.
-- Server-side cursors fetch only the visible row ceiling plus one row.
-- Query, lock, and idle-transaction timeouts apply inside protected operations.
+| Command | Scope | Pool | Write access |
+|---|---|---:|---|
+| `pgsql-mcp` | Full catalog, SQL, diagnostics, and reviewed changes | Configured pool | Explicit unrestricted mode |
+| `pgsql-mcp-lite` | Six focused read-only tools | Two connections | No |
+| `pgsql-mcp-ha` | Replication and failover inspection | Focused pool | No |
 
-## Tools
+## Capability map
 
-### Core and catalog
+### Catalog and diagnostics
 
-| Tool | Purpose |
-|---|---|
-| `get_server_capabilities` | Report the active profile and hard limits |
-| `list_schemas` | List database schemas |
-| `list_objects` | List common objects in one schema |
-| `get_object_details` | Inspect one common object |
-| `get_server_info` | Report bounded server metadata |
-| `search_catalog` | Search trusted PostgreSQL catalogs |
-| `list_relations` | List all supported relation classes |
-| `get_relation_details` | Inspect one relation by live catalog identity |
-| `list_postgres_types` | List PostgreSQL types by OID |
-| `get_postgres_type` | Inspect one PostgreSQL type |
-| `get_extension_profiles` | List extension capability profiles |
-| `get_extension_objects` | List objects that belong to one extension |
-| `get_postgis_diagnostics` | Report bounded PostGIS columns and spatial indexes |
-| `get_pgvector_diagnostics` | Report bounded pgvector columns and indexes |
-| `get_deployment_profile` | Report provider capabilities without secrets |
+- Inspect schemas, relations, routines, types, privileges, policies, and partitions.
+- Search trusted PostgreSQL catalogs.
+- Report installed and available extension profiles.
+- Inventory objects that belong to an installed extension.
+- Report PostGIS columns and spatial indexes.
+- Report pgvector columns and indexes.
+- Report provider capabilities without reading secrets.
+- Inspect replication topology and failover readiness.
 
 ### SQL and data
 
-| Tool | Purpose |
-|---|---|
-| `execute_sql` | Execute one bounded read-only statement |
-| `execute_transaction` | Execute guarded atomic steps |
-| `select_rows` | Select a typed bounded page |
-| `insert_rows` | Insert a typed batch |
-| `upsert_rows` | Upsert through a verified unique key |
-| `update_rows` | Update rows with commit guards |
-| `delete_rows` | Delete rows with commit guards |
+- Execute one bounded read-only SQL statement.
+- Bind values with native PostgreSQL parameters.
+- Select typed pages with stable keyset pagination.
+- Insert, upsert, update, and delete rows with commit guards.
+- Execute guarded atomic transactions in unrestricted mode.
 
-### Reviewed changes
+### Reviewed operations
 
-| Tool | Purpose |
-|---|---|
-| `create_migration_plan` | Create and hash a transactional migration plan |
-| `apply_migration_plan` | Apply a reviewed migration |
-| `get_migration_status` | Read migration ledger metadata |
-| `rollback_migration` | Roll back the latest reviewed migration |
-| `create_maintenance_plan` | Create and hash a maintenance plan |
-| `apply_maintenance_plan` | Apply reviewed nontransactional maintenance |
-| `get_maintenance_status` | Read maintenance ledger metadata |
-| `reconcile_maintenance_operation` | Resolve an unknown maintenance outcome |
+- Create and hash transactional migration plans.
+- Apply and roll back reviewed migrations.
+- Create and hash nontransactional maintenance plans.
+- Apply maintenance and reconcile an unknown outcome.
 
 ### Analysis
 
-| Tool | Purpose |
+- Explain validated queries.
+- Read bounded workload statistics.
+- Analyze query and workload index opportunities.
+- Run database health checks.
+- Publish privacy-preserving runtime metrics.
+
+## Hard limits
+
+| Surface | Limit |
+|---|---:|
+| Full server rows | 5,000 |
+| Lite server rows | 500 |
+| Typed data rows | 500 |
+| Extension objects | 500 |
+| PostGIS columns and indexes | 500 combined |
+| pgvector columns and indexes | 500 combined |
+
+Protected operations also apply query, lock, and idle-transaction timeouts.
+
+## Production use
+
+The current release scope is ready for trusted internal and operator workflows when all checklist items are true.
+
+- Use a dedicated database role.
+- Keep restricted mode unless a reviewed write workflow is required.
+- Keep remote transports behind authentication and TLS.
+- Set explicit row and timeout limits.
+- Monitor the main branch quality jobs.
+- Test each upgrade against a disposable PostgreSQL database.
+- Review [production readiness](docs/production-readiness.md) before deployment.
+
+Future roadmap items are not release guarantees. Read [the project plan](plan.md) for planned work.
+
+## Documentation
+
+| Topic | Guide |
 |---|---|
-| `explain_query` | Inspect a validated query plan |
-| `get_top_queries` | Read bounded workload statistics |
-| `analyze_workload_indexes` | Analyze workload index opportunities |
-| `analyze_query_indexes` | Analyze supplied query index opportunities |
-| `analyze_db_health` | Run database health checks |
-
-The HA profile also provides replication topology and failover-readiness tools.
-
-## Configuration
-
-| CLI option | Environment variable | Default |
-|---|---|---|
-| positional `database_url` | `DATABASE_URI` | required |
-| `--access-mode` | none | `restricted` |
-| `--transport` | none | `stdio` |
-| `--query-timeout` | `QUERY_TIMEOUT` | `30` seconds |
-| `--max-rows` | `MAX_ROWS` | `100` |
-| `--migration-schema` | `MIGRATION_SCHEMA` | `public` |
-| `--maintenance-schema` | `MAINTENANCE_SCHEMA` | `public` |
-| `--sse-host` | `SSE_HOST` | `localhost` |
-| `--sse-port` | `SSE_PORT` | `8000` |
-| `--sse-path` | `SSE_PATH` | `/sse` |
+| Security and deployment | [Security model](docs/security.md) |
+| Production review | [Production readiness](docs/production-readiness.md) |
+| Architecture | [Execution safety](docs/architecture/execution-safety.md) |
+| Compatibility | [PostgreSQL compatibility](docs/compatibility.md) |
+| Catalog model | [Catalog inspection](docs/catalog.md) |
+| Typed data | [Data operations](docs/data-operations.md) |
+| Reviewed changes | [Migrations](docs/migrations.md) and [maintenance](docs/maintenance.md) |
+| Extensions | [Profiles](docs/extensions.md), [objects](docs/extension-objects.md), [PostGIS](docs/postgis.md), and [pgvector](docs/pgvector.md) |
+| High availability | [Replication](docs/replication.md) |
+| Quality system | [Testing and documentation index](docs/testing.md) |
+| Writing profile | [ASD-STE100 project profile](docs/asd-ste100.md) |
 
 ## Development
 
@@ -183,9 +183,15 @@ uv run pytest -v
 python scripts/check_ste_docs.py .
 ```
 
+Run the complete gates locally before merge. GitHub Actions run only after a commit reaches `main`.
+
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you change the project.
 
-The documentation index is in [docs/testing.md](docs/testing.md).
+## Release
+
+Main branch jobs build and validate the package and container. They do not publish artifacts.
+
+Read [PUBLISHING.md](PUBLISHING.md) for the manual release procedure.
 
 ## License
 

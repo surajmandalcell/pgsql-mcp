@@ -1,7 +1,7 @@
 [project]
 name = "pgsql-mcp"
 version = "0.1.0"
-description = "PostgreSQL MCP Server - Index tuning, query analysis, and database health monitoring"
+description = "A safety-first PostgreSQL MCP server for inspection, bounded SQL, reviewed changes, and operational diagnostics"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -35,10 +35,6 @@ pgsql-mcp = "postgres_mcp:main"
 pgsql-mcp-lite = "postgres_mcp:lite_main"
 pgsql-mcp-ha = "postgres_mcp:ha_main"
 
-# [tool.pyright]
-# venvPath = "."
-# venv = ".venv"
-
 [tool.pytest.ini_options]
 pythonpath = ["./src"]
 asyncio_default_fixture_loop_scope = "function"
@@ -61,16 +57,14 @@ target-version = "py38"
 exclude = [".venv*"]
 
 lint.select = [
-    "E",   # pycodestyle errors
-    "F",   # pyflakes
-    "I",   # isort
-    "B",   # flake8-bugbear
-    "W",   # pycodestyle warnings
-    # "C90", # mccabe complexity
-    "N",   # pep8-naming
-    # "D",   # pydocstyle
-    "UP",  # pyupgrade
-    "RUF"  # ruff-specific rules
+    "E",
+    "F",
+    "I",
+    "B",
+    "W",
+    "N",
+    "UP",
+    "RUF",
 ]
 
 [tool.ruff.format]
@@ -90,13 +84,8 @@ typeCheckingMode = "standard"
 pythonVersion = "3.12"
 strictParameterNullChecking = true
 reportMissingTypeStubs = false
-# reportUnknownMemberType = true
-# reportUnknownParameterType = true
-# reportUnknownVariableType = true
-# reportUnknownArgumentType = true
 reportPrivateUsage = true
 reportUntypedFunctionDecorator = true
 reportMissingTypeArgument = true
 reportInvalidTypeVarUse = true
 reportUnnecessaryCast = true
-# reportUnnecessaryComparison = true

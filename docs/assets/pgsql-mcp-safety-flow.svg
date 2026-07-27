@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" role="img" aria-labelledby="title desc">
+  <title id="title">pgsql-mcp request safety flow</title>
+  <desc id="desc">A request passes through validation, profile enforcement, parameter binding, transaction controls, and result limits.</desc>
+  <rect width="1200" height="260" fill="#ffffff"/>
+  <rect x="0" y="0" width="1200" height="10" fill="#0f62fe"/>
+  <text x="42" y="48" font-family="IBM Plex Sans, Arial, sans-serif" font-size="24" font-weight="600" fill="#161616">Every public request crosses the same safety sequence</text>
+  <text x="42" y="75" font-family="IBM Plex Mono, monospace" font-size="12" fill="#525252">THE DATABASE ROLE REMAINS THE FINAL AUTHORIZATION BOUNDARY</text>
+
+  <g font-family="IBM Plex Sans, Arial, sans-serif">
+    <rect x="42" y="112" width="150" height="76" fill="#f4f4f4" stroke="#161616"/>
+    <text x="64" y="143" font-size="15" font-weight="600" fill="#161616">1 / Parse</text>
+    <text x="64" y="168" font-size="12" fill="#525252">One request</text>
+
+    <rect x="230" y="112" width="150" height="76" fill="#edf5ff" stroke="#0f62fe"/>
+    <text x="252" y="143" font-size="15" font-weight="600" fill="#161616">2 / Validate</text>
+    <text x="252" y="168" font-size="12" fill="#525252">Allowed shape</text>
+
+    <rect x="418" y="112" width="150" height="76" fill="#edf5ff" stroke="#0f62fe"/>
+    <text x="440" y="143" font-size="15" font-weight="600" fill="#161616">3 / Enforce</text>
+    <text x="440" y="168" font-size="12" fill="#525252">Active profile</text>
+
+    <rect x="606" y="112" width="150" height="76" fill="#edf5ff" stroke="#0f62fe"/>
+    <text x="628" y="143" font-size="15" font-weight="600" fill="#161616">4 / Bind</text>
+    <text x="628" y="168" font-size="12" fill="#525252">Native values</text>
+
+    <rect x="794" y="112" width="150" height="76" fill="#edf5ff" stroke="#0f62fe"/>
+    <text x="816" y="143" font-size="15" font-weight="600" fill="#161616">5 / Execute</text>
+    <text x="816" y="168" font-size="12" fill="#525252">Guarded transaction</text>
+
+    <rect x="982" y="112" width="176" height="76" fill="#161616"/>
+    <text x="1004" y="143" font-size="15" font-weight="600" fill="#ffffff">6 / Bound result</text>
+    <text x="1004" y="168" font-size="12" fill="#c6c6c6">Rows + time + bytes</text>
+  </g>
+
+  <g stroke="#161616" stroke-width="2" fill="none">
+    <path d="M192 150H230"/><path d="M220 143L232 150L220 157"/>
+    <path d="M380 150H418"/><path d="M408 143L420 150L408 157"/>
+    <path d="M568 150H606"/><path d="M596 143L608 150L596 157"/>
+    <path d="M756 150H794"/><path d="M784 143L796 150L784 157"/>
+    <path d="M944 150H982"/><path d="M972 143L984 150L972 157"/>
+  </g>
+
+  <rect x="42" y="211" width="1116" height="1" fill="#e0e0e0"/>
+  <text x="42" y="236" font-family="IBM Plex Mono, monospace" font-size="11" fill="#6f6f6f">RESTRICTED MODE: READ ONLY / UNRESTRICTED MODE: EXPLICIT + REVIEWED + GUARDED</text>
+</svg>

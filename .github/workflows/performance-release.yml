@@ -1,17 +1,14 @@
-name: Performance release budgets
+name: Performance and release budgets
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: performance-release-${{ github.workflow }}-${{ github.ref }}
+  group: performance-release-main
   cancel-in-progress: true
 
 jobs:
@@ -44,11 +41,13 @@ jobs:
       - name: Build wheel
         run: uv build --wheel --out-dir dist
 
-      - name: Build minimal runtime image
+      - name: Build runtime image
         run: docker build --tag pgsql-mcp:release-budget .
 
       - name: Enforce release budgets
+        shell: bash
         run: |
+          set -euo pipefail
           wheel=$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)
           test -n "$wheel"
           uv run python scripts/check_release_budgets.py \
@@ -56,7 +55,7 @@ jobs:
             --image pgsql-mcp:release-budget \
             --json-output release-budget-report.json
 
-      - name: Upload release-budget evidence
+      - name: Upload release evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

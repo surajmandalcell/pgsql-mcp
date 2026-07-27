@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">pgsql-mcp system architecture</title>
+  <desc id="desc">MCP clients connect through a controlled server boundary to read-only, reviewed change, and diagnostic services for PostgreSQL.</desc>
+  <rect width="1200" height="430" fill="#ffffff"/>
+  <path d="M0 56H1200M0 112H1200M0 168H1200M0 224H1200M0 280H1200M0 336H1200M0 392H1200" stroke="#e0e0e0" stroke-width="1"/>
+  <path d="M80 0V430M160 0V430M240 0V430M320 0V430M400 0V430M480 0V430M560 0V430M640 0V430M720 0V430M800 0V430M880 0V430M960 0V430M1040 0V430M1120 0V430" stroke="#f4f4f4" stroke-width="1"/>
+  <rect x="0" y="0" width="1200" height="12" fill="#0f62fe"/>
+  <text x="48" y="54" font-family="IBM Plex Sans, Arial, sans-serif" font-size="27" font-weight="600" fill="#161616">PostgreSQL operations through a controlled MCP boundary</text>
+  <text x="48" y="83" font-family="IBM Plex Mono, monospace" font-size="13" fill="#525252">READ-ONLY BY DEFAULT / REVIEWED WRITES / BOUNDED RESULTS</text>
+
+  <text x="48" y="132" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" fill="#525252">MCP CLIENTS</text>
+  <rect x="48" y="150" width="190" height="54" fill="#f4f4f4" stroke="#161616"/>
+  <text x="68" y="183" font-family="IBM Plex Sans, Arial, sans-serif" font-size="16" fill="#161616">AI assistant</text>
+  <rect x="48" y="218" width="190" height="54" fill="#f4f4f4" stroke="#161616"/>
+  <text x="68" y="251" font-family="IBM Plex Sans, Arial, sans-serif" font-size="16" fill="#161616">Automation</text>
+  <rect x="48" y="286" width="190" height="54" fill="#f4f4f4" stroke="#161616"/>
+  <text x="68" y="319" font-family="IBM Plex Sans, Arial, sans-serif" font-size="16" fill="#161616">Operator tool</text>
+
+  <path d="M238 177H316M238 245H316M238 313H316" stroke="#161616" stroke-width="2"/>
+  <path d="M306 170L318 177L306 184M306 238L318 245L306 252M306 306L318 313L306 320" fill="none" stroke="#161616" stroke-width="2"/>
+
+  <text x="338" y="132" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" fill="#525252">CONTROL PLANE</text>
+  <rect x="318" y="150" width="250" height="190" fill="#161616"/>
+  <rect x="318" y="150" width="12" height="190" fill="#0f62fe"/>
+  <text x="350" y="190" font-family="IBM Plex Sans, Arial, sans-serif" font-size="25" font-weight="600" fill="#ffffff">pgsql-mcp</text>
+  <text x="350" y="221" font-family="IBM Plex Mono, monospace" font-size="12" fill="#c6c6c6">PROFILE + POLICY ROUTER</text>
+  <line x1="350" y1="241" x2="536" y2="241" stroke="#525252"/>
+  <text x="350" y="270" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" fill="#ffffff">SQL validation</text>
+  <text x="350" y="295" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" fill="#ffffff">Limits and timeouts</text>
+  <text x="350" y="320" font-family="IBM Plex Sans, Arial, sans-serif" font-size="14" fill="#ffffff">Review hashes</text>
+
+  <path d="M568 190H646M568 245H646M568 300H646" stroke="#161616" stroke-width="2"/>
+  <path d="M636 183L648 190L636 197M636 238L648 245L636 252M636 293L648 300L636 307" fill="none" stroke="#161616" stroke-width="2"/>
+
+  <text x="668" y="132" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" fill="#525252">SERVICE LANES</text>
+  <rect x="648" y="150" width="270" height="68" fill="#edf5ff" stroke="#0f62fe"/>
+  <rect x="648" y="150" width="8" height="68" fill="#0f62fe"/>
+  <text x="678" y="179" font-family="IBM Plex Sans, Arial, sans-serif" font-size="16" font-weight="600" fill="#161616">Catalog + diagnostics</text>
+  <text x="678" y="201" font-family="IBM Plex Mono, monospace" font-size="11" fill="#525252">OID / EXTENSIONS / HEALTH / HA</text>
+
+  <rect x="648" y="232" width="270" height="68" fill="#edf5ff" stroke="#0f62fe"/>
+  <rect x="648" y="232" width="8" height="68" fill="#0f62fe"/>
+  <text x="678" y="261" font-family="IBM Plex Sans, Arial, sans-serif" font-size="16" font-weight="600" fill="#161616">Bounded read SQL</text>
+  <text x="678" y="283" font-family="IBM Plex Mono, monospace" font-size="11" fill="#525252">PARAMETERS / CURSORS / READ ONLY</text>
+
+  <rect x="648" y="314" width="270" height="68" fill="#fff1f1" stroke="#da1e28"/>
+  <rect x="648" y="314" width="8" height="68" fill="#da1e28"/>
+  <text x="678" y="343" font-family="IBM Plex Sans, Arial, sans-serif" font-size="16" font-weight="600" fill="#161616">Reviewed change</text>
+  <text x="678" y="365" font-family="IBM Plex Mono, monospace" font-size="11" fill="#525252">PLAN / HASH / GUARDS / LEDGER</text>
+
+  <path d="M918 184H996M918 266H996M918 348H996" stroke="#161616" stroke-width="2"/>
+  <path d="M986 177L998 184L986 191M986 259L998 266L986 273M986 341L998 348L986 355" fill="none" stroke="#161616" stroke-width="2"/>
+
+  <text x="1018" y="132" font-family="IBM Plex Mono, monospace" font-size="12" font-weight="600" fill="#525252">DATA PLANE</text>
+  <rect x="998" y="150" width="154" height="232" fill="#0f62fe"/>
+  <text x="1024" y="207" font-family="IBM Plex Sans, Arial, sans-serif" font-size="22" font-weight="600" fill="#ffffff">PostgreSQL</text>
+  <text x="1024" y="238" font-family="IBM Plex Mono, monospace" font-size="12" fill="#d0e2ff">14 / 15 / 16</text>
+  <text x="1024" y="258" font-family="IBM Plex Mono, monospace" font-size="12" fill="#d0e2ff">17 / 18</text>
+  <line x1="1024" y1="280" x2="1125" y2="280" stroke="#78a9ff"/>
+  <text x="1024" y="310" font-family="IBM Plex Sans, Arial, sans-serif" font-size="13" fill="#ffffff">Catalogs</text>
+  <text x="1024" y="333" font-family="IBM Plex Sans, Arial, sans-serif" font-size="13" fill="#ffffff">Data</text>
+  <text x="1024" y="356" font-family="IBM Plex Sans, Arial, sans-serif" font-size="13" fill="#ffffff">Ledgers</text>
+
+  <text x="48" y="405" font-family="IBM Plex Mono, monospace" font-size="11" fill="#6f6f6f">DEFAULT PATH: VALIDATE → BIND → ENFORCE → EXECUTE → BOUND</text>
+</svg>

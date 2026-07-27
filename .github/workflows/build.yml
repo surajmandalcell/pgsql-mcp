@@ -2,16 +2,13 @@ name: pgsql-mcp CI
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened]
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: pgsql-mcp-ci-${{ github.workflow }}-${{ github.ref }}
+  group: pgsql-mcp-ci-main
   cancel-in-progress: true
 
 jobs:
@@ -21,25 +18,27 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
 
       - name: Start Docker service
         run: sudo service docker start || true
 
-      - name: Verify Docker is running
+      - name: Verify Docker service
         run: docker info
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
         with:
           version: "0.6.9"
 
-      - name: Install dependencies and optional features
+      - name: Install complete dependency set
         run: uv sync --frozen --all-extras
 
       - name: Check formatting and lint
@@ -51,16 +50,21 @@ jobs:
         run: uv run pyright
 
       - name: Run tests
+        shell: bash
         run: |
-          set -o pipefail
-          uv run pytest -v --log-cli-level=INFO --junitxml=pytest-results.xml 2>&1 | tee pytest-output.txt
+          set -euo pipefail
+          uv run pytest -v \
+            --log-cli-level=INFO \
+            --junitxml=pytest-results.xml \
+            2>&1 | tee pytest-output.txt
 
       - name: Upload test diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: pytest-diagnostics
           path: |
             pytest-output.txt
             pytest-results.xml
           if-no-files-found: error
+          retention-days: 30

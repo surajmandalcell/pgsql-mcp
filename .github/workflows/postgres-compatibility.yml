@@ -2,16 +2,13 @@ name: PostgreSQL compatibility
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    types: [opened, synchronize, reopened]
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: postgres-compatibility-${{ github.workflow }}-${{ github.ref }}
+  group: postgres-compatibility-main
   cancel-in-progress: true
 
 jobs:
@@ -56,7 +53,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          set -o pipefail
           uv run pytest -v \
             tests/unit/test_postgres_matrix.py \
             tests/integration/catalog \
