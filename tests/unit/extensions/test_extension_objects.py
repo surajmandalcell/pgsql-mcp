@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from postgres_mcp.extension_objects import ExtensionObjectError
 from postgres_mcp.extension_objects import MAX_EXTENSION_OBJECTS
+from postgres_mcp.extension_objects import ExtensionObjectError
 from postgres_mcp.extension_objects import PostgresExtensionObjectRepository
 from postgres_mcp.extension_objects import validate_extension_name
 from postgres_mcp.sql import BoundedQueryResult

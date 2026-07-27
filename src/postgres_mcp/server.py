@@ -49,6 +49,9 @@ from .data_ops import SelectRowsRequest  # noqa: E402
 from .data_ops import UpdateRowsRequest  # noqa: E402
 from .data_ops import UpsertRowsRequest  # noqa: E402
 from .explain import ExplainPlanTool  # noqa: E402
+from .extension_objects import MAX_EXTENSION_OBJECTS  # noqa: E402
+from .extension_objects import ExtensionObjectError  # noqa: E402
+from .extension_objects import PostgresExtensionObjectRepository  # noqa: E402
 from .extension_profiles import ExtensionProfileError  # noqa: E402
 from .extension_profiles import PostgresExtensionProfileRepository  # noqa: E402
 from .maintenance import MaintenanceError  # noqa: E402
@@ -184,6 +187,14 @@ def get_extension_profile_repository() -> PostgresExtensionProfileRepository:
     )
 
 
+def get_extension_object_repository() -> PostgresExtensionObjectRepository:
+    """Build the bounded core-catalog extension object repository."""
+    return PostgresExtensionObjectRepository(
+        get_base_sql_driver(),
+        timeout_seconds=max(1.0, float(current_query_timeout)),
+    )
+
+
 def get_migration_service() -> MigrationService:
     """Build the reviewed migration application service for this database."""
     return MigrationService(PostgresMigrationBackend(get_base_sql_driver(), ledger_schema=current_migration_schema))
@@ -303,6 +314,12 @@ async def get_server_capabilities() -> ResponseType:
                 "known_families": ["postgis", "timescaledb", "citus", "pgvector", "hypopg", "pg_stat_statements"],
                 "catalog_and_type_compatible": ["postgis", "timescaledb", "citus", "pgvector"],
                 "specialized_tools": ["hypopg", "pg_stat_statements"],
+                "object_inventory": {
+                    "generic": True,
+                    "core_catalogs_only": True,
+                    "max_objects": 500,
+                    "unknown_object_types": "preserved",
+                },
             },
             "migrations": {
                 "planning": True,
@@ -416,6 +433,25 @@ async def get_extension_profiles(
         return format_error_response(str(exc))
     except Exception as exc:
         logger.exception("Unexpected extension profile error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Inventory PostgreSQL objects owned by one installed extension through core catalogs")
+async def get_extension_objects(
+    extension_name: Annotated[str, Field(description="Exact installed extension name")],
+    limit: Annotated[
+        int,
+        Field(description="Maximum extension-owned objects", ge=1, le=MAX_EXTENSION_OBJECTS),
+    ] = 100,
+) -> ResponseType:
+    """Return a bounded deterministic extension-membership inventory."""
+    try:
+        snapshot = await get_extension_object_repository().snapshot(extension_name, limit=limit)
+        return format_text_response(snapshot.to_payload())
+    except ExtensionObjectError as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected extension object inventory error")
         return format_error_response(str(exc))
 
 
