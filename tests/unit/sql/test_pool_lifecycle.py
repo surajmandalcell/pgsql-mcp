@@ -82,9 +82,10 @@ async def test_concurrent_first_use_initializes_exactly_one_pool(monkeypatch: py
     first_result, second_result = await asyncio.gather(first, second)
 
     assert first_result is second_result
-    assert created == [first_result]
-    assert first_result.open_calls == 1
-    assert first_result.close_calls == 0
+    assert len(created) == 1
+    assert created[0] is first_result
+    assert created[0].open_calls == 1
+    assert created[0].close_calls == 0
 
 
 @pytest.mark.asyncio
