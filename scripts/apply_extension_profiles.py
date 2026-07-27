@@ -75,8 +75,15 @@ replace_once(
     "| `get_server_info` | Report PostgreSQL version, role, recovery, locale, and extensions |\n"
     "| `get_extension_profiles` | List bounded installed or available extension capability profiles |\n",
 )
-replace_once(
-    readme,
-    "reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), replication and HA diagnostics in [docs/replication.md](docs/replication.md), and the version support contract",
-    "reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), replication and HA diagnostics in [docs/replication.md](docs/replication.md), extension profiles in [docs/extensions.md](docs/extensions.md), and the version support contract",
+old_docs = (
+    "reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), "
+    "replication and HA diagnostics in [docs/replication.md](docs/replication.md), "
+    "and the version support contract"
 )
+new_docs = (
+    "reviewed maintenance in [docs/maintenance.md](docs/maintenance.md), "
+    "replication and HA diagnostics in [docs/replication.md](docs/replication.md), "
+    "extension profiles in [docs/extensions.md](docs/extensions.md), "
+    "and the version support contract"
+)
+replace_once(readme, old_docs, new_docs)
