@@ -1,8 +1,9 @@
 name: Apply pgvector shared surfaces
 
 on:
-  push:
-    branches: [feature/pgvector-catalog-diagnostics-v3]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -13,14 +14,15 @@ concurrency:
 
 jobs:
   apply-validate-commit:
+    if: github.event.pull_request.head.ref == 'feature/pgvector-catalog-diagnostics-v3' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: Checkout exact branch without persisted credentials
+      - name: Checkout exact PR head without persisted credentials
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          ref: feature/pgvector-catalog-diagnostics-v3
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
           fetch-depth: 0
 
