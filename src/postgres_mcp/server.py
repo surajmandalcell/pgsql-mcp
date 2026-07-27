@@ -69,6 +69,9 @@ from .migrations import MigrationPlanner  # noqa: E402
 from .migrations import MigrationService  # noqa: E402
 from .migrations import MigrationStepDraft  # noqa: E402
 from .migrations import PostgresMigrationBackend  # noqa: E402
+from .postgis_diagnostics import MAX_POSTGIS_ITEMS  # noqa: E402
+from .postgis_diagnostics import PostgisCatalogError  # noqa: E402
+from .postgis_diagnostics import PostgresPostgisRepository  # noqa: E402
 from .provider_profiles import PostgresProviderProfileRepository  # noqa: E402
 from .provider_profiles import ProviderProfileError  # noqa: E402
 from .runtime import ABSOLUTE_MAX_ROWS  # noqa: E402
@@ -205,6 +208,14 @@ def get_extension_object_repository() -> PostgresExtensionObjectRepository:
     )
 
 
+def get_postgis_repository() -> PostgresPostgisRepository:
+    """Build the bounded read-only PostGIS catalog repository."""
+    return PostgresPostgisRepository(
+        get_base_sql_driver(),
+        timeout_seconds=max(1.0, float(current_query_timeout)),
+    )
+
+
 def get_migration_service() -> MigrationService:
     """Build the reviewed migration application service for this database."""
     return MigrationService(PostgresMigrationBackend(get_base_sql_driver(), ledger_schema=current_migration_schema))
@@ -329,6 +340,14 @@ async def get_server_capabilities() -> ResponseType:
                     "core_catalogs_only": True,
                     "max_objects": 500,
                     "unknown_object_types": "preserved",
+                },
+                "postgis_diagnostics": {
+                    "read_only": True,
+                    "core_catalogs_only": True,
+                    "extension_functions_called": False,
+                    "max_items": MAX_POSTGIS_ITEMS,
+                    "types": ["geometry", "geography", "raster"],
+                    "index_methods": ["gist", "spgist", "brin"],
                 },
             },
             "deployment_profiles": {
@@ -502,6 +521,31 @@ async def get_extension_objects(
         return format_error_response(str(exc))
     except Exception as exc:
         logger.exception("Unexpected extension object inventory error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Report bounded PostGIS columns and indexes through PostgreSQL core catalogs")
+async def get_postgis_diagnostics(
+    max_columns: Annotated[
+        int,
+        Field(description="Maximum PostGIS columns", ge=1, le=MAX_POSTGIS_ITEMS - 1),
+    ] = 250,
+    max_indexes: Annotated[
+        int,
+        Field(description="Maximum PostGIS indexes", ge=1, le=MAX_POSTGIS_ITEMS - 1),
+    ] = 250,
+) -> ResponseType:
+    """Return read-only spatial typmod, index, and validity metadata."""
+    try:
+        snapshot = await get_postgis_repository().snapshot(
+            max_columns=max_columns,
+            max_indexes=max_indexes,
+        )
+        return format_text_response(snapshot.to_payload())
+    except PostgisCatalogError as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected PostGIS catalog diagnostic error")
         return format_error_response(str(exc))
 
 
