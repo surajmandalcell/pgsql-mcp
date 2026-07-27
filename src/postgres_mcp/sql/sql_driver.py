@@ -82,14 +82,14 @@ class DbConnPool:
         self.pool: AsyncConnectionPool[Any] | None = None
         self._is_valid = False
         self._last_error: str | None = None
-        self._initialization_lock = asyncio.Lock()
+        self._lifecycle_lock = asyncio.Lock()
 
     async def pool_connect(self, connection_url: str | None = None) -> AsyncConnectionPool[Any]:
         """Initialize and verify the connection pool exactly once under concurrency."""
         if self.pool and self._is_valid:
             return self.pool
 
-        async with self._initialization_lock:
+        async with self._lifecycle_lock:
             if self.pool and self._is_valid:
                 return self.pool
 
@@ -100,7 +100,7 @@ class DbConnPool:
                 self._last_error = "Database connection URL not provided"
                 raise ValueError(self._last_error)
 
-            await self.close()
+            await self._close_unlocked()
             try:
                 candidate: AsyncConnectionPool[Any] = AsyncConnectionPool(
                     conninfo=url,
@@ -119,11 +119,11 @@ class DbConnPool:
             except Exception as exc:
                 self._is_valid = False
                 self._last_error = str(exc)
-                await self.close()
+                await self._close_unlocked()
                 raise ValueError(f"Connection attempt failed: {obfuscate_password(str(exc))}") from exc
 
-    async def close(self) -> None:
-        """Close the pool and clear reusable state."""
+    async def _close_unlocked(self) -> None:
+        """Close the current pool while the caller owns the lifecycle lock."""
         pool = self.pool
         self.pool = None
         self._is_valid = False
@@ -132,6 +132,11 @@ class DbConnPool:
                 await pool.close()
             except Exception as exc:
                 logger.warning("Error closing connection pool: %s", exc)
+
+    async def close(self) -> None:
+        """Serialize pool shutdown against initialization and verification."""
+        async with self._lifecycle_lock:
+            await self._close_unlocked()
 
     def mark_invalid(self, error: BaseException) -> None:
         """Record a connection-level failure without exposing mutable internals."""

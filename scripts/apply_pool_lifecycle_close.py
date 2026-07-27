@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 path = Path("src/postgres_mcp/sql/sql_driver.py")
 source = path.read_text()
 
