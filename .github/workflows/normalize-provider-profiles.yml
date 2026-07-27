@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add -- README.md .github/workflows/postgres-compatibility.yml scripts/apply_provider_profiles.py src/postgres_mcp/provider_profiles.py src/postgres_mcp/server.py tests/unit/providers tests/unit/server/test_provider_profile_tools.py tests/integration/providers
+          git add -- README.md scripts/apply_provider_profiles.py src/postgres_mcp/provider_profiles.py src/postgres_mcp/server.py tests/unit/providers tests/unit/server/test_provider_profile_tools.py tests/integration/providers
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
