@@ -88,6 +88,12 @@ async def test_capabilities_advertise_extension_profiles_without_claiming_full_e
         "known_families": ["postgis", "timescaledb", "citus", "pgvector", "hypopg", "pg_stat_statements"],
         "catalog_and_type_compatible": ["postgis", "timescaledb", "citus", "pgvector"],
         "specialized_tools": ["hypopg", "pg_stat_statements"],
+        "object_inventory": {
+            "generic": True,
+            "core_catalogs_only": True,
+            "max_objects": 500,
+            "unknown_object_types": "preserved",
+        },
     }
 
 
