@@ -81,6 +81,20 @@ def test_parse_spatial_typmod_rejects_malformed_text() -> None:
         parse_spatial_typmod("numeric(10,2)")
 
 
+def test_column_type_must_match_formatted_catalog_type() -> None:
+    malformed = column_row()
+    malformed["formatted_type"] = "geography(Point,4326)"
+    repository = PostgresPostgisRepository(AsyncMock())
+
+    with pytest.raises(PostgisCatalogError, match="must match"):
+        repository._snapshot_from_rows(  # pyright: ignore[reportPrivateUsage]
+            identity_row(),
+            [malformed],
+            [],
+            truncated=False,
+        )
+
+
 @pytest.mark.asyncio
 async def test_repository_reads_identity_columns_and_spatial_indexes() -> None:
     driver = AsyncMock()
