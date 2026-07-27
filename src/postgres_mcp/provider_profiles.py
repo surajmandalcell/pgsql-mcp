@@ -112,9 +112,7 @@ class RuntimeCapabilities:
             "wal_level": self.wal_level,
             "max_wal_senders": self.max_wal_senders,
             "max_replication_slots": self.max_replication_slots,
-            "logical_replication_configured": (
-                self.wal_level == "logical" and self.max_wal_senders > 0 and self.max_replication_slots > 0
-            ),
+            "logical_replication_configured": (self.wal_level == "logical" and self.max_wal_senders > 0 and self.max_replication_slots > 0),
         }
 
 
@@ -248,8 +246,10 @@ _PROVIDER_CONSTRAINTS: dict[DeploymentProvider, ProviderConstraints] = {
         "platform_supported_only",
         "provider_managed",
         "platform_configuration_dependent",
-        _MANAGED_NOTES
-        + ("This profile describes Supabase-hosted deployments; self-hosted Supabase should use upstream or explicit generic-managed policy.",),
+        (
+            *_MANAGED_NOTES,
+            "This profile describes Supabase-hosted deployments; self-hosted Supabase should use upstream or explicit generic-managed policy.",
+        ),
     ),
 }
 
@@ -350,15 +350,18 @@ def profile_from_row(
         provider = hint
         confidence = DetectionConfidence.EXPLICIT
         if detected not in {DeploymentProvider.UNKNOWN, DeploymentProvider.GENERIC_MANAGED, hint}:
-            warnings.append(
-                f"explicit provider hint {hint.value!r} conflicts with strong marker for {detected.value!r}"
-            )
+            warnings.append(f"explicit provider hint {hint.value!r} conflicts with strong marker for {detected.value!r}")
     else:
         provider = detected
-        confidence = DetectionConfidence.HIGH if detected not in {
-            DeploymentProvider.UNKNOWN,
-            DeploymentProvider.GENERIC_MANAGED,
-        } else DetectionConfidence.UNKNOWN
+        confidence = (
+            DetectionConfidence.HIGH
+            if detected
+            not in {
+                DeploymentProvider.UNKNOWN,
+                DeploymentProvider.GENERIC_MANAGED,
+            }
+            else DetectionConfidence.UNKNOWN
+        )
         if detected is DeploymentProvider.GENERIC_MANAGED:
             warnings.append("multiple provider marker families were observed; no single provider was selected")
 

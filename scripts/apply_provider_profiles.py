@@ -12,14 +12,14 @@ def replace_once(path: str, old: str, new: str) -> None:
 provider_module = "src/postgres_mcp/provider_profiles.py"
 replace_once(
     provider_module,
-    '''        _MANAGED_NOTES
+    """        _MANAGED_NOTES
         + ("This profile describes Supabase-hosted deployments; self-hosted Supabase should use upstream or explicit generic-managed policy.",),
-''',
-    '''        (
+""",
+    """        (
             *_MANAGED_NOTES,
             "This profile describes Supabase-hosted deployments; self-hosted Supabase should use upstream or explicit generic-managed policy.",
         ),
-''',
+""",
 )
 
 server = "src/postgres_mcp/server.py"
@@ -59,8 +59,8 @@ replace_once(
     '                    "azure_flexible_server",\n'
     '                    "neon",\n'
     '                    "supabase_hosted",\n'
-    '                ],\n'
-    '            },\n'
+    "                ],\n"
+    "            },\n"
     '            "migrations": {\n',
 )
 marker = '@mcp.tool(description="Search relations, routines, types, collations, and extensions")\n'
@@ -92,8 +92,7 @@ replace_once(server, marker, tool + marker)
 
 readme = "README.md"
 extension_feature = (
-    "- **Extension profiles** — inventory known and unknown installed extensions "
-    "with honest catalog, type, and specialized-tool support tiers.\n"
+    "- **Extension profiles** — inventory known and unknown installed extensions with honest catalog, type, and specialized-tool support tiers.\n"
 )
 provider_feature = (
     "- **Provider profiles** — distinguish explicit and strongly detected managed "
