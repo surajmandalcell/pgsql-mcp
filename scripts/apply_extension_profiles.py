@@ -21,7 +21,7 @@ replace_once(
     server,
     "def get_migration_service() -> MigrationService:\n",
     "def get_extension_profile_repository() -> PostgresExtensionProfileRepository:\n"
-    "    \"\"\"Build the bounded read-only extension inventory repository.\"\"\"\n"
+    '    """Build the bounded read-only extension inventory repository."""\n'
     "    return PostgresExtensionProfileRepository(\n"
     "        get_base_sql_driver(),\n"
     "        timeout_seconds=max(1.0, float(current_query_timeout)),\n"
@@ -37,7 +37,7 @@ replace_once(
     '                "known_families": ["postgis", "timescaledb", "citus", "pgvector", "hypopg", "pg_stat_statements"],\n'
     '                "catalog_and_type_compatible": ["postgis", "timescaledb", "citus", "pgvector"],\n'
     '                "specialized_tools": ["hypopg", "pg_stat_statements"],\n'
-    '            },\n'
+    "            },\n"
     '            "migrations": {\n',
 )
 marker = '@mcp.tool(description="Search relations, routines, types, collations, and extensions")\n'

@@ -49,6 +49,8 @@ from .data_ops import SelectRowsRequest  # noqa: E402
 from .data_ops import UpdateRowsRequest  # noqa: E402
 from .data_ops import UpsertRowsRequest  # noqa: E402
 from .explain import ExplainPlanTool  # noqa: E402
+from .extension_profiles import ExtensionProfileError  # noqa: E402
+from .extension_profiles import PostgresExtensionProfileRepository  # noqa: E402
 from .maintenance import MaintenanceError  # noqa: E402
 from .maintenance import MaintenanceExecutionError  # noqa: E402
 from .maintenance import MaintenanceOperation  # noqa: E402
@@ -174,6 +176,14 @@ def get_base_sql_driver() -> SqlDriver:
     return SqlDriver(conn=db_connection)
 
 
+def get_extension_profile_repository() -> PostgresExtensionProfileRepository:
+    """Build the bounded read-only extension inventory repository."""
+    return PostgresExtensionProfileRepository(
+        get_base_sql_driver(),
+        timeout_seconds=max(1.0, float(current_query_timeout)),
+    )
+
+
 def get_migration_service() -> MigrationService:
     """Build the reviewed migration application service for this database."""
     return MigrationService(PostgresMigrationBackend(get_base_sql_driver(), ledger_schema=current_migration_schema))
@@ -287,6 +297,13 @@ async def get_server_capabilities() -> ResponseType:
                 "supported_kinds": ["array", "base", "composite", "domain", "enum", "multirange", "pseudo", "range"],
                 "unknown_extension_types": "preserved_with_oid_and_tagged_value",
             },
+            "extensions": {
+                "dynamic_inventory": True,
+                "unknown_extensions": "preserved_as_generic_catalog_profiles",
+                "known_families": ["postgis", "timescaledb", "citus", "pgvector", "hypopg", "pg_stat_statements"],
+                "catalog_and_type_compatible": ["postgis", "timescaledb", "citus", "pgvector"],
+                "specialized_tools": ["hypopg", "pg_stat_statements"],
+            },
             "migrations": {
                 "planning": True,
                 "apply_available": current_access_mode is AccessMode.UNRESTRICTED,
@@ -381,6 +398,24 @@ async def get_server_info() -> ResponseType:
         return format_text_response(await get_server_info_data(get_base_sql_driver()))
     except Exception as exc:
         logger.exception("Error getting server information")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="List installed or available PostgreSQL extension capability profiles")
+async def get_extension_profiles(
+    include_available: Annotated[
+        bool,
+        Field(description="Include extensions available to install but not currently installed"),
+    ] = False,
+) -> ResponseType:
+    """Return a bounded, read-only extension support inventory."""
+    try:
+        snapshot = await get_extension_profile_repository().snapshot(include_available=include_available)
+        return format_text_response(snapshot.to_payload())
+    except ExtensionProfileError as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected extension profile error")
         return format_error_response(str(exc))
 
 
