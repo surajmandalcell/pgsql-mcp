@@ -1,4 +1,4 @@
-name: Normalize PostGIS catalog diagnostics
+name: Publish PostGIS catalog diagnostics
 
 on:
   pull_request:
@@ -9,14 +9,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: normalize-postgis-catalog-diagnostics
+  group: publish-postgis-catalog-diagnostics
   cancel-in-progress: false
 
 jobs:
-  normalize-validate-commit:
+  validate-commit:
     if: github.event.pull_request.head.ref == 'feature/postgis-catalog-diagnostics' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
 
     steps:
       - name: Checkout exact PR head without persisted credentials
@@ -43,44 +43,62 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Apply portable catalog query
-        run: python scripts/apply_postgis_source.py
+      - name: Apply final source surfaces
+        run: |
+          python scripts/apply_postgis_source.py
+          python scripts/apply_postgis_server.py
+          python scripts/apply_postgis_readme.py
 
       - name: Install complete dependency set
         run: uv sync --frozen --all-extras
 
-      - name: Normalize and validate source
+      - name: Validate publishable source
         shell: bash
         run: |
           set -euo pipefail
           uv run ruff format \
             scripts/apply_postgis_source.py \
+            scripts/apply_postgis_server.py \
+            scripts/apply_postgis_readme.py \
             src/postgres_mcp/postgis_diagnostics.py \
-            tests/unit/extensions/test_postgis_diagnostics.py
+            src/postgres_mcp/server.py \
+            tests/unit/extensions/test_postgis_diagnostics.py \
+            tests/unit/server/test_postgis_diagnostic_tools.py \
+            tests/integration/extensions/test_postgis_diagnostics_integration.py
           uv run ruff check --fix \
             scripts/apply_postgis_source.py \
+            scripts/apply_postgis_server.py \
+            scripts/apply_postgis_readme.py \
             src/postgres_mcp/postgis_diagnostics.py \
-            tests/unit/extensions/test_postgis_diagnostics.py
+            src/postgres_mcp/server.py \
+            tests/unit/extensions/test_postgis_diagnostics.py \
+            tests/unit/server/test_postgis_diagnostic_tools.py \
+            tests/integration/extensions/test_postgis_diagnostics_integration.py
+          python scripts/check_ste_docs.py .
           uv run ruff format --check .
           uv run ruff check .
           uv run pyright
-          uv run pytest -q tests/unit/extensions/test_postgis_diagnostics.py
+          uv run pytest -q \
+            tests/unit/extensions/test_postgis_diagnostics.py \
+            tests/unit/server/test_postgis_diagnostic_tools.py
           uv run pytest -q
 
-      - name: Commit normalized source
+      - name: Commit final source
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           git add -- \
+            README.md \
+            docs/postgis.md \
             src/postgres_mcp/postgis_diagnostics.py \
-            tests/unit/extensions/test_postgis_diagnostics.py
+            src/postgres_mcp/server.py \
+            tests/integration/extensions/test_postgis_diagnostics_integration.py \
+            tests/unit/extensions/test_postgis_diagnostics.py \
+            tests/unit/server/test_postgis_diagnostic_tools.py
           git diff --cached --check
-          if git diff --cached --quiet; then
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Normalize PostGIS catalog diagnostics"
+          git commit -m "Expose read-only PostGIS catalog diagnostics"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/postgis-catalog-diagnostics
