@@ -62,35 +62,74 @@ jobs:
       - name: Install complete dependency set
         run: uv sync --frozen --all-extras
 
-      - name: Normalize and validate
+      - name: Normalize and capture gates
+        id: gates
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
+          set -o pipefail
           uv run ruff format \
             src/postgres_mcp/extension_objects.py \
             src/postgres_mcp/server.py \
             tests/unit/extensions/test_extension_objects.py \
             tests/unit/server/test_extension_object_tools.py \
             tests/unit/server/test_extension_profile_tools.py \
-            tests/integration/extensions/test_extension_objects_integration.py
+            tests/integration/extensions/test_extension_objects_integration.py \
+            2>&1 | tee /tmp/ruff-format.txt
           uv run ruff check --fix \
             src/postgres_mcp/extension_objects.py \
             src/postgres_mcp/server.py \
             tests/unit/extensions/test_extension_objects.py \
             tests/unit/server/test_extension_object_tools.py \
             tests/unit/server/test_extension_profile_tools.py \
-            tests/integration/extensions/test_extension_objects_integration.py
-          uv run ruff format --check .
-          uv run ruff check .
-          uv run pyright
+            tests/integration/extensions/test_extension_objects_integration.py \
+            2>&1 | tee /tmp/ruff-fix.txt
+          uv run ruff format --check . 2>&1 | tee /tmp/ruff-format-check.txt
+          format_status=${PIPESTATUS[0]}
+          uv run ruff check . 2>&1 | tee /tmp/ruff-check.txt
+          lint_status=${PIPESTATUS[0]}
+          uv run pyright 2>&1 | tee /tmp/pyright.txt
+          pyright_status=${PIPESTATUS[0]}
           uv run pytest -q \
             tests/unit/extensions/test_extension_objects.py \
             tests/unit/server/test_extension_object_tools.py \
             tests/unit/server/test_extension_profile_tools.py \
-            tests/integration/extensions/test_extension_objects_integration.py
-          uv run pytest -q
+            tests/integration/extensions/test_extension_objects_integration.py \
+            2>&1 | tee /tmp/focused-pytest.txt
+          focused_status=${PIPESTATUS[0]}
+          uv run pytest -q --junitxml=/tmp/pytest.xml 2>&1 | tee /tmp/pytest.txt
+          pytest_status=${PIPESTATUS[0]}
+          printf 'format=%s\nlint=%s\npyright=%s\nfocused=%s\npytest=%s\n' \
+            "$format_status" "$lint_status" "$pyright_status" "$focused_status" "$pytest_status" \
+            | tee /tmp/status.txt
+          tar --exclude=.git --exclude=.venv --exclude=.pytest_cache --exclude='**/__pycache__' \
+            -czf /tmp/workspace.tar.gz .
+          if [ "$format_status" -ne 0 ] || [ "$lint_status" -ne 0 ] || \
+             [ "$pyright_status" -ne 0 ] || [ "$focused_status" -ne 0 ] || [ "$pytest_status" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: extension-object-v2-validation
+          path: |
+            /tmp/ruff-format.txt
+            /tmp/ruff-fix.txt
+            /tmp/ruff-format-check.txt
+            /tmp/ruff-check.txt
+            /tmp/pyright.txt
+            /tmp/focused-pytest.txt
+            /tmp/pytest.txt
+            /tmp/pytest.xml
+            /tmp/status.txt
+            /tmp/workspace.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Commit validated source
+        if: success()
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
