@@ -1,90 +1,55 @@
 # Contributing
 
-pgsql-mcp is maintained with a lightweight lifecycle suitable for a single maintainer while preserving the reviewability expected of an open-source database tool.
+Use this process for each change.
 
-## Development lifecycle
+## Prepare the environment
 
-### 1. Frame the change
+1. Install `uv`.
+2. Run `uv sync --all-extras`.
+3. Create a branch from the current `main` branch.
+4. Keep the branch focused on one bounded context.
 
-Write the problem, user impact, non-goals, safety implications, and acceptance criteria before implementation. For a small fix, the pull-request description is sufficient. For architecture or security work, add or update a document under `docs/architecture/`.
+## Write tests first
 
-### 2. Establish the baseline
+1. Add a test that shows the required behavior.
+2. Run the focused test and confirm that it fails.
+3. Add the smallest correct implementation.
+4. Run the focused test again.
+5. Run the complete quality gates.
 
-Reproduce the defect or record the current behavior. Add a failing regression test when practical. For performance work, record the command, dataset, PostgreSQL version, and baseline measurement.
+Do not weaken an existing safety test to make new code pass.
 
-### 3. Work on a focused branch
-
-Use one branch and pull request per independently reviewable concern. Keep generated files, unrelated formatting, dependency churn, and drive-by refactors out of the diff.
-
-### 4. Implement from the boundary inward
-
-For database changes, define validation and transaction invariants before adding MCP surface area. Keep SQL values parameterized, identifiers composed safely, results bounded, and optional features lazy-loaded.
-
-### 5. Verify locally
+## Required gates
 
 ```bash
-uv sync
 uv run ruff format --check .
 uv run ruff check .
 uv run pyright
 uv run pytest -v
+python scripts/check_ste_docs.py .
 ```
 
-Run relevant PostgreSQL integration tests whenever SQL, catalog queries, transactions, extensions, pooling, or version-dependent behavior changes. A skipped required integration test is not a pass.
+Changes to safety-critical code also require changed-line coverage and mutation checks.
 
-### 6. Self-review the diff
+Database behavior requires real PostgreSQL integration tests.
 
-Check the complete diff, not only the files you intended to change. Remove dead code, stale comments, temporary diagnostics, duplicate constants, unused imports, and orphan files. Confirm documentation and error messages match actual behavior.
+Compatibility-sensitive behavior requires PostgreSQL 14 through PostgreSQL 18.
 
-### 7. Open a pull request
+## Commit rules
 
-The pull request must explain:
+- Use clear imperative commit subjects.
+- Keep generated transfer files out of final pull requests.
+- Do not commit credentials, database URLs, or test secrets.
+- Keep documentation consistent with the final code.
+- Use ASD-STE100 style for Markdown prose.
 
-- what changed and why;
-- user and developer impact;
-- security and compatibility considerations;
-- tests and manual verification;
-- known limitations and follow-up work.
+## Pull request rules
 
-Draft pull requests are appropriate while CI or design work remains. Mark a pull request ready only when the diff is complete and the description reflects it.
+1. Describe the bounded context.
+2. Describe the test-first sequence.
+3. List safety invariants.
+4. List validation results.
+5. Resolve all review threads.
+6. Merge only a source-only green head.
 
-### 8. Merge only green, reviewed work
-
-Required lint, type, unit, integration, and coverage checks must pass. Re-read the final diff after automated fixes. Squash merge focused work so `main` receives one intentional commit with a durable message.
-
-### 9. Release deliberately
-
-Update user-facing documentation and the changelog for behavior or compatibility changes. Use semantic versioning. Verify the built wheel and container rather than assuming source-tree tests cover packaging.
-
-## Database safety rules
-
-- Restricted mode must remain the default.
-- User SQL must be single-statement, parameterized, timed, and bounded.
-- Raw values must not be interpolated into SQL.
-- Mutations require explicit row guards.
-- Multi-step mutations must share one connection and transaction.
-- Any failure before a confirmed commit must result in rollback.
-- Non-transactional PostgreSQL operations need dedicated workflows.
-- Tests must cover denial paths, timeout, cancellation, rollback, and cleanup.
-
-## Code style
-
-- Python 3.12 or newer.
-- Type annotations for public and non-trivial internal APIs.
-- Google-style docstrings for public APIs.
-- Ruff formatting and linting with the repository configuration.
-- Pyright standard mode with repository-specific strict checks.
-- Single sources of truth for constants, types, configuration, and recurring error semantics.
-
-## Commit and pull-request style
-
-Use concise imperative commit subjects, for example:
-
-```text
-Harden bounded SQL execution
-```
-
-A squash-merge message should describe the complete user-visible change, not an intermediate implementation step.
-## Migration-domain changes
-
-Treat reviewed migrations as a separate bounded context. Add or update planner, aggregate, application-service, adapter, MCP-boundary, and real-PostgreSQL tests before changing behavior. Never split DDL execution from ledger bookkeeping, bypass the review hash, weaken the trusted-ledger contract, or label a non-transactional operation rollback-safe.
+Use squash merge unless the change needs preserved commit structure.

@@ -1,33 +1,27 @@
-# Performance and release budgets
+# Performance release budgets
 
-`pgsql-mcp` treats startup cost, memory, package size, and container size as blocking release properties rather than informal goals.
+The release workflow measures startup, memory, package size, and container size.
 
-## Blocking budgets
+## Measured profiles
 
-The `Performance release budgets` workflow builds the wheel and minimal runtime image, then measures independent cold Python processes. The current upper bounds are:
+The workflow measures the core package and the lite server in separate cold processes.
 
-| Measurement | Maximum |
-|---|---:|
-| Core package cold process | 750 ms |
-| Core package peak RSS | 64 MiB |
-| Lite server module cold process | 1,500 ms |
-| Lite server module peak RSS | 128 MiB |
-| Compressed wheel | 2 MiB |
-| Uncompressed Docker image | 300 MiB |
+It records median process time, import time, and peak resident memory.
 
-The core import must remain lazy: it may not load the full server, lite server, migrations, typed-data operations, or health suite. The lite import may not load migrations, typed writes, maintenance, health, or LLM modules.
+## Package budgets
 
-## Local reproduction
+The workflow checks the built wheel size.
 
-```bash
-uv sync --frozen --all-extras
-uv run pytest -q tests/unit/quality/test_release_budgets.py
-uv build --wheel --out-dir dist
-docker build --tag pgsql-mcp:release-budget .
-uv run python scripts/check_release_budgets.py \
-  --wheel "$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)" \
-  --image pgsql-mcp:release-budget \
-  --json-output release-budget-report.json
-```
+It also checks the runtime container image size.
 
-Each measurement is emitted as JSON and retained as a workflow artifact. A budget may be tightened after measured improvements. Raising one requires an explicit rationale and review; it must never happen merely to silence a regression.
+## Import boundaries
+
+The core package must not import full-server modules eagerly.
+
+The lite server must not import write, migration, maintenance, health, provider, extension, or LLM modules.
+
+## Evidence
+
+Each run uploads machine-readable JSON and command output.
+
+A budget violation blocks the release.

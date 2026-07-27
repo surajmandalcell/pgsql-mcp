@@ -1,65 +1,56 @@
 # Execution safety architecture
 
-## Design goals
+The execution layer uses structural controls instead of prompt guidance.
 
-The execution layer is intentionally small and dependency-light. PostgreSQL remains responsible for SQL semantics and transaction isolation; pgsql-mcp adds conservative request validation, policy selection, result bounds, lifecycle cleanup, and stable MCP responses.
+## Trust boundaries
 
-## Components
+User values go to PostgreSQL as native parameters.
 
-### `runtime.py`
+Identifiers come from validated catalog names and trusted identifier composition.
 
-Defines the single source of truth for access modes, server profiles, pool defaults, query timeouts, and result ceilings. `QueryLimits` validates configuration before the MCP transport starts.
+Public raw SQL remains read-only.
 
-### `sql/transaction.py`
+Write access uses structured tools with explicit guards.
 
-Contains pure request models and pre-execution validation. It:
+## Read-only execution
 
-- normalizes psycopg positional placeholders only for parser inspection;
-- requires placeholder and parameter counts to match;
-- parses exactly one statement with pglast;
-- permits a deliberately small transaction statement set;
-- rejects transaction control, DDL, locking selects, `SELECT INTO`, and data-modifying CTEs;
-- applies mutation row guards before any connection is acquired.
+A public read request has these controls:
 
-No database I/O occurs in this module, which keeps safety decisions deterministic and unit-testable.
+- one parsed statement
+- a database-enforced read-only transaction
+- statement and lock timeouts
+- row security
+- a restricted search path
+- a hard row ceiling
+- a hard encoded-size ceiling
+- a named server-side cursor
 
-### `sql/query_guard.py`
+The cursor fetches only the row ceiling plus one row.
 
-Combines single-statement validation with the existing deep read-only AST validator. The original SQL and values are never reconstructed from the validation copy. Execution is delegated to the bounded driver inside a client-side timeout.
+The extra row reports truncation.
 
-### `sql/sql_driver.py`
+## Atomic writes
 
-Owns connection lifecycle and database transaction boundaries. Public bounded execution and atomic transactions use connection-level `commit()` and `rollback()` so cleanup does not depend on another SQL statement succeeding. Bounded reads apply transaction-local statement, lock, idle-in-transaction, row-security, and search-path settings before user SQL runs.
+Atomic write requests use one connection and one transaction.
 
-Atomic transaction invariants:
+Each mutation requires a maximum affected-row count.
 
-1. all steps are validated first;
-2. one connection is acquired;
-3. one `BEGIN` is issued with a trusted enum-derived isolation level;
-4. transaction-local statement, lock, and idle-in-transaction timeouts, row security, and search path are applied;
-5. each mutation must report a reliable affected-row count;
-6. row guards are checked before commit;
-7. cancellation is caught long enough to roll back and is then propagated;
-8. success is constructed only after commit returns.
+`UPDATE` and `DELETE` also require a filter.
 
-### `sql/results.py`
+The service can require an exact affected-row count.
 
-Defines bounded result envelopes and loss-aware serialization. The codec keeps ordinary JSON compact while tagging values that would otherwise lose precision or type intent.
+Any validation, execution, timeout, cancellation, result, or commit failure prevents a success result.
 
-## Compatibility boundary
+## Ambiguous commits
 
-The existing `SqlDriver.execute_query()` method remains for internal health, EXPLAIN, and tuning modules whose queries are authored by the project. User-supplied SQL must use `execute_bounded_query()` through the server tool. New features must not expose the unbounded compatibility method to MCP callers.
+A connection failure during `COMMIT` creates an unknown outcome.
 
-## Review checklist
+The server does not report success or failure when PostgreSQL state is uncertain.
 
-Changes to the execution path must verify:
+## Nontransactional work
 
-- parser failure is fail-closed;
-- placeholders remain separate from SQL values;
-- no new statement shape bypasses mutation guards;
-- every exit path commits exactly once or rolls back;
-- cancellation and timeout paths clean up the transaction;
-- row limits are enforced before response construction;
-- error responses do not claim commit after a failed commit;
-- restricted mode remains the default;
-- advanced dependencies are not added to the hot path without measurement.
+Maintenance operations use a separate reviewed domain.
+
+The server records durable states and supports explicit reconciliation.
+
+It does not claim rollback for commands that PostgreSQL cannot roll back.
