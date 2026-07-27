@@ -1,1 +1,0 @@
-Temporary publisher cleanup marker.
