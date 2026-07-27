@@ -56,12 +56,14 @@ jobs:
         run: |
           set -euo pipefail
           uv run ruff format \
+            scripts/apply_pgvector_server.py \
             src/postgres_mcp/pgvector_diagnostics.py \
             src/postgres_mcp/server.py \
             tests/unit/extensions/test_pgvector_diagnostics.py \
             tests/unit/server/test_pgvector_diagnostic_tools.py \
             tests/integration/extensions/test_pgvector_diagnostics_integration.py
           uv run ruff check --fix \
+            scripts/apply_pgvector_server.py \
             src/postgres_mcp/pgvector_diagnostics.py \
             src/postgres_mcp/server.py \
             tests/unit/extensions/test_pgvector_diagnostics.py \
