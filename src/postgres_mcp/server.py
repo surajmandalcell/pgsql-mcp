@@ -69,6 +69,9 @@ from .migrations import MigrationPlanner  # noqa: E402
 from .migrations import MigrationService  # noqa: E402
 from .migrations import MigrationStepDraft  # noqa: E402
 from .migrations import PostgresMigrationBackend  # noqa: E402
+from .pgvector_diagnostics import MAX_PGVECTOR_ITEMS  # noqa: E402
+from .pgvector_diagnostics import PgvectorCatalogError  # noqa: E402
+from .pgvector_diagnostics import PostgresPgvectorRepository  # noqa: E402
 from .postgis_diagnostics import MAX_POSTGIS_ITEMS  # noqa: E402
 from .postgis_diagnostics import PostgisCatalogError  # noqa: E402
 from .postgis_diagnostics import PostgresPostgisRepository  # noqa: E402
@@ -216,6 +219,14 @@ def get_postgis_repository() -> PostgresPostgisRepository:
     )
 
 
+def get_pgvector_repository() -> PostgresPgvectorRepository:
+    """Build the bounded read-only pgvector catalog repository."""
+    return PostgresPgvectorRepository(
+        get_base_sql_driver(),
+        timeout_seconds=max(1.0, float(current_query_timeout)),
+    )
+
+
 def get_migration_service() -> MigrationService:
     """Build the reviewed migration application service for this database."""
     return MigrationService(PostgresMigrationBackend(get_base_sql_driver(), ledger_schema=current_migration_schema))
@@ -348,6 +359,14 @@ async def get_server_capabilities() -> ResponseType:
                     "max_items": MAX_POSTGIS_ITEMS,
                     "types": ["geometry", "geography", "raster"],
                     "index_methods": ["gist", "spgist", "brin"],
+                },
+                "pgvector_diagnostics": {
+                    "read_only": True,
+                    "core_catalogs_only": True,
+                    "extension_functions_called": False,
+                    "max_items": MAX_PGVECTOR_ITEMS,
+                    "types": ["vector", "halfvec", "sparsevec", "bit"],
+                    "index_methods": ["hnsw", "ivfflat"],
                 },
             },
             "deployment_profiles": {
@@ -546,6 +565,31 @@ async def get_postgis_diagnostics(
         return format_error_response(str(exc))
     except Exception as exc:
         logger.exception("Unexpected PostGIS catalog diagnostic error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Report bounded pgvector columns and indexes through PostgreSQL core catalogs")
+async def get_pgvector_diagnostics(
+    max_columns: Annotated[
+        int,
+        Field(description="Maximum pgvector columns", ge=1, le=MAX_PGVECTOR_ITEMS - 1),
+    ] = 250,
+    max_indexes: Annotated[
+        int,
+        Field(description="Maximum pgvector indexes", ge=1, le=MAX_PGVECTOR_ITEMS - 1),
+    ] = 250,
+) -> ResponseType:
+    """Return read-only pgvector column, dimension, index, and validity metadata."""
+    try:
+        snapshot = await get_pgvector_repository().snapshot(
+            max_columns=max_columns,
+            max_indexes=max_indexes,
+        )
+        return format_text_response(snapshot.to_payload())
+    except PgvectorCatalogError as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected pgvector catalog diagnostic error")
         return format_error_response(str(exc))
 
 
