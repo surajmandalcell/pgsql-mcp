@@ -66,6 +66,8 @@ from .migrations import MigrationPlanner  # noqa: E402
 from .migrations import MigrationService  # noqa: E402
 from .migrations import MigrationStepDraft  # noqa: E402
 from .migrations import PostgresMigrationBackend  # noqa: E402
+from .provider_profiles import PostgresProviderProfileRepository  # noqa: E402
+from .provider_profiles import ProviderProfileError  # noqa: E402
 from .runtime import ABSOLUTE_MAX_ROWS  # noqa: E402
 from .runtime import DEFAULT_LOCK_TIMEOUT_SECONDS  # noqa: E402
 from .runtime import DEFAULT_MAX_ROWS  # noqa: E402
@@ -179,6 +181,14 @@ def get_base_sql_driver() -> SqlDriver:
 def get_extension_profile_repository() -> PostgresExtensionProfileRepository:
     """Build the bounded read-only extension inventory repository."""
     return PostgresExtensionProfileRepository(
+        get_base_sql_driver(),
+        timeout_seconds=max(1.0, float(current_query_timeout)),
+    )
+
+
+def get_provider_profile_repository() -> PostgresProviderProfileRepository:
+    """Build the conservative read-only deployment profile repository."""
+    return PostgresProviderProfileRepository(
         get_base_sql_driver(),
         timeout_seconds=max(1.0, float(current_query_timeout)),
     )
@@ -304,6 +314,23 @@ async def get_server_capabilities() -> ResponseType:
                 "catalog_and_type_compatible": ["postgis", "timescaledb", "citus", "pgvector"],
                 "specialized_tools": ["hypopg", "pg_stat_statements"],
             },
+            "deployment_profiles": {
+                "automatic_detection": "strong_markers_only",
+                "unknown_without_marker": True,
+                "explicit_hint_supported": True,
+                "secrets_read": False,
+                "supported_profiles": [
+                    "upstream",
+                    "generic_managed",
+                    "aws_rds",
+                    "aws_aurora",
+                    "google_cloud_sql",
+                    "google_alloydb",
+                    "azure_flexible_server",
+                    "neon",
+                    "supabase_hosted",
+                ],
+            },
             "migrations": {
                 "planning": True,
                 "apply_available": current_access_mode is AccessMode.UNRESTRICTED,
@@ -416,6 +443,29 @@ async def get_extension_profiles(
         return format_error_response(str(exc))
     except Exception as exc:
         logger.exception("Unexpected extension profile error")
+        return format_error_response(str(exc))
+
+
+@mcp.tool(description="Report conservative PostgreSQL deployment-provider capabilities without secrets")
+async def get_deployment_profile(
+    provider_hint: Annotated[
+        str,
+        Field(
+            description=(
+                "auto, upstream, generic_managed, aws_rds, aws_aurora, google_cloud_sql, "
+                "google_alloydb, azure_flexible_server, neon, or supabase_hosted"
+            )
+        ),
+    ] = "auto",
+) -> ResponseType:
+    """Return explicit or strong-marker provider identity plus standard runtime capabilities."""
+    try:
+        snapshot = await get_provider_profile_repository().snapshot(provider_hint=provider_hint)
+        return format_text_response(snapshot.to_payload())
+    except ProviderProfileError as exc:
+        return format_error_response(str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected provider profile error")
         return format_error_response(str(exc))
 
 
