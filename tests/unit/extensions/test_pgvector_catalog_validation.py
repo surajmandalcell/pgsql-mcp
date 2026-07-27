@@ -130,3 +130,11 @@ def test_unsupported_extension_owned_column_type_is_rejected() -> None:
 
     with pytest.raises(PgvectorCatalogError, match="not supported"):
         snapshot(columns=[malformed])
+
+
+def test_column_type_must_match_formatted_catalog_type() -> None:
+    malformed = column_row()
+    malformed["formatted_type"] = "halfvec(3)"
+
+    with pytest.raises(PgvectorCatalogError, match="must match"):
+        snapshot(columns=[malformed])

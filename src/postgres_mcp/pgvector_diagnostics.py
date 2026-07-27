@@ -24,6 +24,36 @@ WHERE e.extname = 'vector'
 """
 
 _COLUMNS_SQL: LiteralString = """
+WITH extension_members AS (
+    SELECT dependency.classid, dependency.objid
+    FROM pg_catalog.pg_depend AS dependency
+    WHERE dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
+      AND dependency.refobjid = %s
+      AND dependency.deptype = 'e'
+),
+extension_index_keys AS (
+    SELECT index.indrelid, key.attribute_number
+    FROM pg_catalog.pg_index AS index
+    JOIN pg_catalog.pg_class AS index_relation ON index_relation.oid = index.indexrelid
+    JOIN pg_catalog.pg_am AS access_method ON access_method.oid = index_relation.relam
+    CROSS JOIN LATERAL unnest(index.indkey::smallint[], index.indclass::oid[])
+      AS key(attribute_number, operator_class_oid)
+    WHERE key.attribute_number > 0
+      AND (
+          EXISTS (
+              SELECT 1
+              FROM extension_members AS member
+              WHERE member.classid = 'pg_catalog.pg_am'::pg_catalog.regclass
+                AND member.objid = access_method.oid
+          )
+          OR EXISTS (
+              SELECT 1
+              FROM extension_members AS member
+              WHERE member.classid = 'pg_catalog.pg_opclass'::pg_catalog.regclass
+                AND member.objid = key.operator_class_oid
+          )
+      )
+)
 SELECT
     relation_namespace.nspname AS schema_name,
     relation.relname AS relation_name,
@@ -35,16 +65,26 @@ FROM pg_catalog.pg_attribute AS attribute
 JOIN pg_catalog.pg_class AS relation ON relation.oid = attribute.attrelid
 JOIN pg_catalog.pg_namespace AS relation_namespace ON relation_namespace.oid = relation.relnamespace
 JOIN pg_catalog.pg_type AS type ON type.oid = attribute.atttypid
-JOIN pg_catalog.pg_depend AS dependency
-  ON dependency.classid = 'pg_catalog.pg_type'::pg_catalog.regclass
- AND dependency.objid = type.oid
- AND dependency.objsubid = 0
- AND dependency.refclassid = 'pg_catalog.pg_extension'::pg_catalog.regclass
- AND dependency.refobjid = %s
- AND dependency.deptype = 'e'
 WHERE attribute.attnum > 0
   AND NOT attribute.attisdropped
   AND relation.relkind IN ('r', 'p', 'v', 'm', 'f')
+  AND (
+      EXISTS (
+          SELECT 1
+          FROM extension_members AS member
+          WHERE member.classid = 'pg_catalog.pg_type'::pg_catalog.regclass
+            AND member.objid = type.oid
+      )
+      OR (
+          type.typname = 'bit'
+          AND EXISTS (
+              SELECT 1
+              FROM extension_index_keys AS key
+              WHERE key.indrelid = attribute.attrelid
+                AND key.attribute_number = attribute.attnum
+          )
+      )
+  )
 ORDER BY relation_namespace.nspname, relation.relname, attribute.attnum
 """
 
@@ -309,13 +349,17 @@ def _column(row: dict[str, Any]) -> PgvectorColumn:
     if type_name not in {"vector", "halfvec", "sparsevec", "bit"}:
         raise PgvectorCatalogError("pgvector column type is not supported")
     formatted_type = _text(row, "formatted_type", maximum=256)
+    dimensions = parse_dimensions(formatted_type)
+    match = _FORMATTED_TYPE.fullmatch(formatted_type.strip())
+    if match is None or match.group(1) != type_name:
+        raise PgvectorCatalogError("pgvector column type must match its formatted type")
     return PgvectorColumn(
         schema=_text(row, "schema_name", maximum=63),
         relation=_text(row, "relation_name", maximum=63),
         column=_text(row, "column_name", maximum=63),
         type_name=type_name,
         formatted_type=formatted_type,
-        dimensions=parse_dimensions(formatted_type),
+        dimensions=dimensions,
         nullable=_boolean(row, "nullable"),
     )
 

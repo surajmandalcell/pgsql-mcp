@@ -25,7 +25,8 @@ async def test_pgvector_columns_and_hnsw_index_use_only_catalog_metadata(
                     CREATE TABLE pgvector_contract.items (
                         id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                         embedding vector(3) NOT NULL,
-                        compact halfvec(3)
+                        compact halfvec(3),
+                        fingerprint bit(8)
                     )
                     """
                 )
@@ -35,6 +36,13 @@ async def test_pgvector_columns_and_hnsw_index_use_only_catalog_metadata(
                     ON pgvector_contract.items
                     USING hnsw (embedding vector_cosine_ops)
                     WITH (m = 8, ef_construction = 32)
+                    """
+                )
+                await cursor.execute(
+                    """
+                    CREATE INDEX items_fingerprint_hnsw_idx
+                    ON pgvector_contract.items
+                    USING hnsw (fingerprint bit_hamming_ops)
                     """
                 )
             await connection.commit()
@@ -53,6 +61,8 @@ async def test_pgvector_columns_and_hnsw_index_use_only_catalog_metadata(
         assert columns[("pgvector_contract", "items", "embedding")].nullable is False
         assert columns[("pgvector_contract", "items", "compact")].type_name == "halfvec"
         assert columns[("pgvector_contract", "items", "compact")].dimensions == 3
+        assert columns[("pgvector_contract", "items", "fingerprint")].type_name == "bit"
+        assert columns[("pgvector_contract", "items", "fingerprint")].dimensions == 8
 
         index = next(item for item in first.indexes if item.name == "items_embedding_hnsw_idx")
         assert index.schema == "pgvector_contract"
@@ -62,6 +72,10 @@ async def test_pgvector_columns_and_hnsw_index_use_only_catalog_metadata(
         assert index.options == {"ef_construction": "32", "m": "8"}
         assert index.valid is True
         assert index.ready is True
+
+        bit_index = next(item for item in first.indexes if item.name == "items_fingerprint_hnsw_idx")
+        assert bit_index.access_method == "hnsw"
+        assert bit_index.operator_classes == ("bit_hamming_ops",)
         assert first.findings == ()
 
         payload_text = repr(first.to_payload()).lower()
