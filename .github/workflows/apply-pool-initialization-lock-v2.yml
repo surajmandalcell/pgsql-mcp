@@ -1,4 +1,4 @@
-name: Apply current-main pool initialization fix
+name: Apply current-main pool lifecycle fix
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-current-main-pool-initialization
+  group: apply-current-main-pool-lifecycle
   cancel-in-progress: false
 
 jobs:
@@ -43,8 +43,8 @@ jobs:
         with:
           version: "0.6.9"
 
-      - name: Apply initialization lock
-        run: python scripts/apply_pool_initialization_lock.py
+      - name: Apply serialized shutdown
+        run: python scripts/apply_pool_lifecycle_close.py
 
       - name: Install complete dependency set
         run: uv sync --frozen --all-extras
@@ -53,23 +53,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run ruff format scripts/apply_pool_initialization_lock.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
-          uv run ruff check --fix scripts/apply_pool_initialization_lock.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
+          uv run ruff format scripts/apply_pool_lifecycle_close.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
+          uv run ruff check --fix scripts/apply_pool_lifecycle_close.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
           uv run ruff format --check .
           uv run ruff check .
           uv run pyright
           uv run pytest -q tests/unit/sql/test_pool_lifecycle.py
           uv run pytest -q
 
-      - name: Commit validated implementation
+      - name: Commit validated lifecycle implementation
         env:
           GITHUB_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          git add -- scripts/apply_pool_initialization_lock.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
+          git add -- scripts/apply_pool_lifecycle_close.py src/postgres_mcp/sql/sql_driver.py tests/unit/sql/test_pool_lifecycle.py
           git diff --cached --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Serialize concurrent pool initialization"
+          git commit -m "Serialize PostgreSQL pool lifecycle"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:fix/concurrent-pool-initialization-v2
