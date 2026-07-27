@@ -35,7 +35,9 @@ async def test_exhausted_pool_times_out_then_recovers(
         async with backend.connection():
             with pytest.raises(PoolTimeout):
                 async with backend.connection(timeout=0.1):
-                    pytest.fail("an exhausted one-connection pool unexpectedly granted a second lease")
+                    pytest.fail(
+                        "an exhausted one-connection pool unexpectedly granted a second lease"
+                    )
 
         async with backend.connection(timeout=2) as connection:
             async with connection.cursor(row_factory=dict_row) as cursor:
