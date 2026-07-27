@@ -63,6 +63,21 @@ async def get_extension_objects(
 '''
 replace_once(server, marker, tool + marker)
 
+capability_test = "tests/unit/server/test_extension_profile_tools.py"
+replace_once(
+    capability_test,
+    '        "specialized_tools": ["hypopg", "pg_stat_statements"],\n'
+    "    }\n",
+    '        "specialized_tools": ["hypopg", "pg_stat_statements"],\n'
+    '        "object_inventory": {\n'
+    '            "generic": True,\n'
+    '            "core_catalogs_only": True,\n'
+    '            "max_objects": 500,\n'
+    '            "unknown_object_types": "preserved",\n'
+    '        },\n'
+    "    }\n",
+)
+
 readme = "README.md"
 extension_feature = (
     "- **Extension profiles** — inventory known and unknown installed extensions "
