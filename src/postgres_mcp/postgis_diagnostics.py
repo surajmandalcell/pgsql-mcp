@@ -83,14 +83,14 @@ WHERE EXISTS (
     SELECT 1
     FROM extension_members AS member
     WHERE member.classid = 'pg_catalog.pg_opclass'::pg_catalog.regclass
-      AND member.objid = ANY(index.indclass)
+      AND member.objid = ANY(index.indclass::oid[])
 )
 ORDER BY relation_namespace.nspname, relation.relname, index_relation.relname
 """
 
 _SPATIAL_TYPE = re.compile(
     r'^(?:(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)\.)?'
-    r'(geometry|geography|raster)(?:\(([A-Za-z0-9_]+),(-?[0-9]+)\))?$'
+    r"(geometry|geography|raster)(?:\(([A-Za-z0-9_]+),(-?[0-9]+)\))?$"
 )
 
 _KNOWN_OPERATOR_CLASSES = frozenset(
