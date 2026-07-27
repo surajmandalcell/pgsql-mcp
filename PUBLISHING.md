@@ -1,57 +1,42 @@
-# Publishing to PyPI
+# Publishing
 
-This project uses GitHub Actions with PyPI Trusted Publishing (OIDC) for secure, token-free releases.
+Use this procedure to publish a release.
 
-## One-Time Setup on PyPI
+## Release requirements
 
-1. Go to https://pypi.org/manage/account/publishing/
-2. Add a new pending publisher with these values:
+- `main` must be green.
+- The working tree must be clean.
+- The version must match the release tag.
+- The changelog text must describe user-visible changes.
+- Package and container budgets must pass.
+- PostgreSQL compatibility jobs must pass.
 
-| Field | Value |
-|-------|-------|
-| **PyPI Project Name** | `pgsql-mcp` |
-| **Owner** | `surajmandalcell` |
-| **Repository name** | `pgsql-mcp` |
-| **Workflow name** | `pypi-publish.yml` |
-| **Environment name** | `pypi` |
-
-3. In your GitHub repository, create the environment:
-   - Go to Settings → Environments → New environment
-   - Name: `pypi`
-   - Optionally add protection rules (required reviewers, etc.)
-
-## Publishing a Release
-
-### Option 1: GitHub Release (Recommended)
+## Build the package
 
 ```bash
-# 1. Update version in pyproject.toml
-# 2. Commit and push
-git add pyproject.toml
-git commit -m "Bump version to X.Y.Z"
-git push
-
-# 3. Create and push a tag
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push --tags
-
-# 4. Create GitHub release (triggers the workflow)
-gh release create vX.Y.Z --title "pgsql-mcp vX.Y.Z" --notes "Release notes here"
-```
-
-### Option 2: Manual Workflow Dispatch
-
-1. Go to Actions → "Publish to PyPI" → Run workflow
-2. Click "Run workflow"
-
-### Option 3: Local Build and Upload (Manual)
-
-```bash
-# Build
+uv sync --all-extras
 uv build
-
-# Upload (requires PyPI API token)
-uv publish
-# or
-twine upload dist/*
 ```
+
+Inspect the generated wheel and source archive.
+
+Do not publish a package that contains credentials, transfer files, or temporary workflows.
+
+## Test the package
+
+1. Create a clean virtual environment.
+2. Install the built wheel.
+3. Run `pgsql-mcp --help`.
+4. Run `pgsql-mcp-lite --help`.
+5. Run `pgsql-mcp-ha --help`.
+6. Run a read-only smoke test against a disposable PostgreSQL database.
+
+## Publish
+
+Create the signed release tag only after all checks pass.
+
+Publish the Python package through the approved release workflow.
+
+Publish the container image through the approved container workflow.
+
+Verify the public package metadata after publication.

@@ -1,26 +1,21 @@
-# PostgreSQL Explain Tools
+# Explain plan module
 
-This module provides tools for analyzing PostgreSQL query execution plans.
+This module validates and inspects PostgreSQL `EXPLAIN` plans.
 
-## Tools
+## Safety
 
-### ExplainPlanTool
+Restricted mode does not permit `EXPLAIN ANALYZE`.
 
-Provides methods for generating different types of EXPLAIN plans.
+The module validates the supplied read-only statement before it requests a plan.
 
-## Usage
+Hypothetical index support requires HypoPG.
 
-The explain tool is integrated into the PostgreSQL MCP server and can be used through the MCP API via the function:
+## Main responsibilities
 
-- `explain_query`
+- build safe `EXPLAIN` options
+- parse JSON plans
+- present important plan nodes
+- compare plans with hypothetical indexes
+- keep plan output bounded
 
-This function accepts parameters to control the behavior:
-- `sql` - The SQL query to explain (required)
-- `analyze` - When true, executes the query to get real statistics (default: false)
-- `hypothetical_indexes` - Optional list of indexes to simulate without creating them
-
-## Benefits
-
-- **Query Understanding**: Helps understand how PostgreSQL executes queries
-- **Performance Analysis**: Identifies bottlenecks and optimization opportunities
-- **Index Testing**: Tests hypothetical indexes without actually creating them
+Do not add direct write execution to this module.

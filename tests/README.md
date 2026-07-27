@@ -1,30 +1,32 @@
-# PostgreSQL MCP Tests
+# Test suite
 
-This directory contains tests for the PostgreSQL MCP package.
+The test suite contains unit, integration, mutation, compatibility, performance, and stress contracts.
 
-## Running Tests
-
-To run all tests:
+## Run common tests
 
 ```bash
-uv run pytest
+uv run pytest -v
 ```
 
-To run a specific test file:
+## Run focused tests
 
 ```bash
-uv run pytest tests/unit/test_obfuscate_password.py
+uv run pytest -q tests/unit/sql
+uv run pytest -q tests/integration/catalog
 ```
 
-To run a specific test:
+## Database tests
+
+Docker-backed tests create disposable PostgreSQL containers.
+
+Set `PGSQL_MCP_TEST_POSTGRES_IMAGE` to select a supported major version.
+
+## Stress tests
 
 ```bash
-uv run pytest tests/unit/test_db_conn_pool.py::test_pool_connect_success
+PGSQL_MCP_RUN_STRESS=1 \
+PGSQL_MCP_TEST_POSTGRES_IMAGE=postgres:16 \
+uv run pytest -q tests/integration/stress
 ```
 
-## Test Structure
-
-- **Unit Tests** (`tests/unit/`): Tests for individual components and functions
-  - `test_obfuscate_password.py`: Tests for password obfuscation functionality
-  - `test_db_conn_pool.py`: Tests for database connection pool
-  - `test_sql_driver.py`: Tests for SQL driver and transaction handling
+Read [TEST_PLAN.md](TEST_PLAN.md) for the coverage map.

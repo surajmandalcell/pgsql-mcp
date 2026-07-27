@@ -1,42 +1,34 @@
-# PostgreSQL extension capability profiles
+# Extension capability profiles
 
-PostgreSQL extensions can add types, catalogs, operators, access methods, background workers, and external side effects. `pgsql-mcp` therefore treats installed extension metadata as a runtime capability contract rather than assuming that every PostgreSQL-compatible deployment has the same surface.
+`get_extension_profiles` reports installed and optionally available extensions.
 
-The `get_extension_profiles` tool reads only `pg_catalog.pg_extension`, `pg_catalog.pg_namespace`, and `pg_catalog.pg_available_extensions`. It never calls extension-owned functions, loads extension client libraries, changes server state, or exposes connection strings.
+## Known families
 
-## Support tiers
+The server recognizes:
 
-| Family | Extension names | Current contract |
-|---|---|---|
-| PostGIS | `postgis`, `postgis_raster`, `postgis_topology`, `postgis_tiger_geocoder` | Dynamic type preservation, spatial catalog and index metadata compatibility |
-| TimescaleDB | `timescaledb`, `timescaledb_toolkit` | Hypertable, chunk, and continuous-aggregate catalog compatibility |
-| Citus | `citus`, `citus_columnar` | Distribution, shard, and worker catalog compatibility |
-| pgvector | `vector` | Vector type preservation and vector index metadata compatibility |
-| HypoPG | `hypopg` | Specialized hypothetical-index support through existing plan and workload tools |
-| pg_stat_statements | `pg_stat_statements` | Specialized workload-statistics support through existing workload tools |
-| Any other extension | Any valid installed or available extension name | Generic catalog presence and unknown-type preservation |
+- PostGIS
+- TimescaleDB
+- Citus
+- pgvector
+- HypoPG
+- `pg_stat_statements`
 
-`catalog_and_type_compatible` does not claim that pgsql-mcp can administer every extension-specific object. It means the generic OID-backed catalog and loss-aware type layers retain extension objects without flattening or rejecting them. Specialized mutating extension operations remain unavailable unless they receive their own reviewed, tested bounded context.
+Unknown extensions remain generic profiles.
 
-## Installed and available inventory
+## Support levels
 
-By default, `get_extension_profiles` returns installed extensions only. Set `include_available=true` to include extensions visible through `pg_available_extensions` but not installed. Results are deterministic and capped at 500 profiles. Installed extensions are always returned before available-only entries, and truncation is explicit.
+A profile can report catalog and type compatibility.
 
-Each profile contains:
+A profile can also list specialized tools that already exist.
 
-- exact normalized extension name;
-- installed and default version strings without semantic reinterpretation;
-- installation schema when installed;
-- PostgreSQL-provided comment when available;
-- known extension family or `other`;
-- support tier;
-- generic capabilities;
-- specialized pgsql-mcp tools, when they already exist.
+The profile does not claim complete runtime support.
 
-Unknown future extensions are preserved as `other` with `generic_catalog` support. This allows new or provider-specific extensions to remain inspectable before a dedicated adapter is added.
+## Safety
 
-## Security boundaries
+The repository reads `pg_extension`, `pg_namespace`, and `pg_available_extensions`.
 
-Extension installation, upgrade, removal, configuration, and extension-owned function execution are outside this read-only inventory. Those operations can require elevated privileges or produce effects that PostgreSQL transactions cannot reverse. They must use reviewed migration or maintenance workflows when pgsql-mcp explicitly supports them.
+It does not import extension client libraries.
 
-A least-privilege role may see fewer available extensions or comments. The returned inventory reflects the connected role's real catalog visibility and never attempts to bypass it.
+It does not execute extension-owned functions.
+
+Results are capped at 500 entries and report truncation.

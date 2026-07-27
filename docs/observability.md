@@ -1,57 +1,40 @@
 # Runtime observability
 
-The full `pgsql-mcp` entry point records bounded, privacy-preserving process metrics at FastMCP's central tool-call boundary. The reliability-focused `pgsql-mcp-lite` profile remains unchanged and does not import the observability or full-server modules.
+The server provides privacy-preserving runtime metrics.
 
-## Data contract
+## Recorded data
 
-The registry stores only:
+Metrics can include:
 
-- registered tool name;
-- aggregate outcome (`success`, `error`, `denied`, `cancelled`, or `unknown`);
-- active-call count;
-- cumulative duration histogram;
-- explicit truncation count;
-- confirmed rollback count.
+- tool call counts
+- result outcomes
+- call duration histograms
+- active call counts
+- truncation counts
+- rollback counts
+- correlation IDs
 
-It never stores MCP arguments, SQL text, parameter values, database or schema identifiers, returned rows, exception messages, connection strings, authentication headers, or client identity. Tool-label cardinality is capped; additional labels collapse into `__other__`.
+## Excluded data
 
-Every in-flight invocation receives a cryptographically random correlation ID through a `contextvars` boundary. The ID is available to structured logging or an optional exporter through `current_correlation_id()` and is cleared when the invocation completes.
+Metrics do not store:
 
-## MCP inspection
+- SQL text
+- parameter values
+- database identifiers
+- result values
+- connection strings
+- exception messages
 
-The full server exposes `get_runtime_metrics`. It returns the deterministic aggregate JSON snapshot and is safe in restricted mode. The metrics tool itself receives the same central instrumentation as every other tool.
+## Endpoints
 
-## Prometheus and health endpoints
+The optional HTTP exporter provides `/metrics` and `/healthz`.
 
-The HTTP exporter is disabled unless `METRICS_PORT` is set.
+It binds to loopback by default.
 
-```bash
-METRICS_PORT=9464 pgsql-mcp postgresql://localhost/app
-```
+Remote binding requires explicit configuration.
 
-The default bind address is `127.0.0.1`. Two read-only endpoints are available:
+## Cardinality
 
-- `GET /metrics` — Prometheus text exposition;
-- `GET /healthz` — a minimal `{"status":"ok"}` response.
+Tool labels use a bounded known set.
 
-Only `GET` and `HEAD` are accepted. Responses disable caching and content sniffing. Request paths and bodies are not logged.
-
-A non-loopback bind is rejected unless explicitly enabled:
-
-```bash
-METRICS_HOST=0.0.0.0 \
-METRICS_PORT=9464 \
-ALLOW_REMOTE_METRICS=true \
-pgsql-mcp postgresql://localhost/app
-```
-
-Remote exposure has no built-in authentication and must be placed behind an authenticated, encrypted, rate-limited reverse proxy or a private network policy. Loopback binding is the recommended default.
-
-## Local validation
-
-```bash
-uv run pytest -q tests/unit/observability
-uv run ruff format --check .
-uv run ruff check .
-uv run pyright
-```
+Unknown labels do not create unlimited metric series.
