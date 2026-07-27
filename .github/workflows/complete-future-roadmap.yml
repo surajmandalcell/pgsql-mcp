@@ -85,6 +85,7 @@ jobs:
           rm -f scripts/apply_future_roadmap.py
           rm -f docs/roadmap-merge-trigger.md
           rm -f docs/roadmap-merge-trigger-2.md
+          rm -f docs/roadmap-merge-trigger-3.md
           rm -f .github/workflows/complete-future-roadmap.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
