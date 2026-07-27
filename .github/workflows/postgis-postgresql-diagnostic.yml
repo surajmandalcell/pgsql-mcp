@@ -33,13 +33,13 @@ jobs:
           - major: "18"
             image: postgis/postgis:18-3.6
     env:
-      PGSQL_MCP_POSTGIS_TEST_URI: postgresql://postgres:postgres@localhost:5432/postgres
+      PGSQL_MCP_POSTGIS_TEST_URI: postgresql://postgres@localhost:5432/postgres
 
     services:
       postgres:
         image: ${{ matrix.image }}
         env:
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_USER: postgres
           POSTGRES_DB: postgres
         ports:
@@ -80,7 +80,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          actual="$(PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -Atc "SHOW server_version_num")"
+          actual="$(psql -h localhost -U postgres -d postgres -Atc "SHOW server_version_num")"
           test "${actual%%????}" = "${{ matrix.major }}"
 
       - name: Run PostGIS catalog contract
