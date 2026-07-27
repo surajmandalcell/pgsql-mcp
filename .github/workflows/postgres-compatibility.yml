@@ -65,6 +65,7 @@ jobs:
             tests/integration/maintenance \
             tests/integration/replication \
             tests/integration/providers \
+            tests/integration/extensions \
             --junitxml="postgres-${{ matrix.major }}-results.xml" \
             2>&1 | tee "postgres-${{ matrix.major }}-output.txt"
 
