@@ -35,9 +35,7 @@ async def test_exhausted_pool_times_out_then_recovers(
         async with backend.connection():
             with pytest.raises(PoolTimeout):
                 async with backend.connection(timeout=0.1):
-                    pytest.fail(
-                        "an exhausted one-connection pool unexpectedly granted a second lease"
-                    )
+                    pytest.fail("an exhausted one-connection pool unexpectedly granted a second lease")
 
         async with backend.connection(timeout=2) as connection:
             async with connection.cursor(row_factory=dict_row) as cursor:
@@ -122,10 +120,7 @@ async def test_cancelled_bounded_read_rolls_back_closes_cursor_and_reuses_connec
 
             assert connection.info.transaction_status is TransactionStatus.IDLE
             async with connection.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(
-                    "SELECT count(*)::integer AS cursor_count FROM pg_catalog.pg_cursors "
-                    "WHERE name LIKE 'pgsql_mcp_%'"
-                )
+                await cursor.execute("SELECT count(*)::integer AS cursor_count FROM pg_catalog.pg_cursors WHERE name LIKE 'pgsql_mcp_%'")
                 cursor_row = await cursor.fetchone()
                 assert cursor_row == {"cursor_count": 0}
                 await cursor.execute("SELECT 1 AS reusable")
