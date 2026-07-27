@@ -125,6 +125,9 @@ def test_provider_hint_aliases(value: object, expected: DeploymentProvider | Non
 
 
 def test_invalid_hint_and_catalog_values_are_rejected(base_row: dict[str, object]) -> None:
+    with pytest.raises(ProviderProfileError, match="provider hint must be text"):
+        parse_provider_hint(42)  # type: ignore[arg-type]
+
     with pytest.raises(ProviderProfileError, match="unsupported provider hint"):
         parse_provider_hint("made-up-cloud")
 
