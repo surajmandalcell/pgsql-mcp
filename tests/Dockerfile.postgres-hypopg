@@ -16,6 +16,14 @@ RUN git clone --depth 1 https://github.com/HypoPG/hypopg.git /tmp/hypopg \
   && cd / \
   && rm -rf /tmp/hypopg
 
+# Clone and build the supported pgvector release.
+RUN git clone --depth 1 --branch v0.8.2 https://github.com/pgvector/pgvector.git /tmp/pgvector \
+  && cd /tmp/pgvector \
+  && make \
+  && make install \
+  && cd / \
+  && rm -rf /tmp/pgvector
+
 # Add initialization script to create extensions in template1
-RUN echo "CREATE EXTENSION IF NOT EXISTS pg_stat_statements; CREATE EXTENSION IF NOT EXISTS hypopg;" \
-  > /docker-entrypoint-initdb.d/00-create-extensions.sql 
+RUN echo "CREATE EXTENSION IF NOT EXISTS pg_stat_statements; CREATE EXTENSION IF NOT EXISTS hypopg; CREATE EXTENSION IF NOT EXISTS vector;" \
+  > /docker-entrypoint-initdb.d/00-create-extensions.sql
