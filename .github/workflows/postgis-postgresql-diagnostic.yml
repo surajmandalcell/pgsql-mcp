@@ -1,0 +1,104 @@
+name: PostGIS PostgreSQL diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgis-postgresql-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  supported-major:
+    if: github.event.pull_request.head.ref == 'feature/postgis-catalog-diagnostics' && github.event.pull_request.head.repo.full_name == github.repository
+    name: PostgreSQL ${{ matrix.major }} with PostGIS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - major: "14"
+            image: postgis/postgis:14-3.5
+          - major: "15"
+            image: postgis/postgis:15-3.5
+          - major: "16"
+            image: postgis/postgis:16-3.5
+          - major: "17"
+            image: postgis/postgis:17-3.5
+          - major: "18"
+            image: postgis/postgis:18-3.6
+    env:
+      PGSQL_MCP_POSTGIS_TEST_URI: postgresql://postgres:postgres@localhost:5432/postgres
+
+    services:
+      postgres:
+        image: ${{ matrix.image }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout exact PR head without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Apply PostGIS catalog and MCP source
+        run: |
+          python scripts/apply_postgis_source.py
+          python scripts/apply_postgis_server.py
+
+      - name: Install complete dependency set
+        run: uv sync --frozen --all-extras
+
+      - name: Verify live PostgreSQL major
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -Atc "SHOW server_version_num")"
+          test "${actual%%????}" = "${{ matrix.major }}"
+
+      - name: Run PostGIS catalog contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run pytest -vv \
+            tests/integration/extensions/test_postgis_diagnostics_integration.py \
+            --junitxml="postgis-${{ matrix.major }}.xml" \
+            2>&1 | tee "postgis-${{ matrix.major }}.txt"
+
+      - name: Upload PostGIS diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: postgis-postgresql-${{ matrix.major }}
+          path: |
+            postgis-${{ matrix.major }}.txt
+            postgis-${{ matrix.major }}.xml
+          if-no-files-found: error
+          retention-days: 14
