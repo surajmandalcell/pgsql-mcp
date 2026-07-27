@@ -43,6 +43,9 @@ jobs:
         with:
           version: "0.6.9"
 
+      - name: Apply portable catalog query
+        run: python scripts/apply_postgis_source.py
+
       - name: Install complete dependency set
         run: uv sync --frozen --all-extras
 
@@ -51,9 +54,11 @@ jobs:
         run: |
           set -euo pipefail
           uv run ruff format \
+            scripts/apply_postgis_source.py \
             src/postgres_mcp/postgis_diagnostics.py \
             tests/unit/extensions/test_postgis_diagnostics.py
           uv run ruff check --fix \
+            scripts/apply_postgis_source.py \
             src/postgres_mcp/postgis_diagnostics.py \
             tests/unit/extensions/test_postgis_diagnostics.py
           uv run ruff format --check .
