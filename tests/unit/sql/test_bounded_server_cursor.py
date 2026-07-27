@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Sequence
 from typing import Any
 from unittest.mock import AsyncMock
@@ -130,6 +131,34 @@ async def test_named_server_cursor_is_closed_before_cancellation_propagates(
     assert isinstance(contexts[1].exit_error, asyncio.CancelledError)
     connection.rollback.assert_awaited_once()
     connection.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("force_readonly", [True, False])
+async def test_rollback_failure_is_logged_without_masking_query_failure(
+    force_readonly: bool,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    failing_cursor = make_cursor(execute_error=RuntimeError("query failure"))
+    if force_readonly:
+        connection, _ = make_connection(make_cursor(), failing_cursor)
+    else:
+        connection, _ = make_connection(failing_cursor)
+    connection.rollback = AsyncMock(side_effect=RuntimeError("rollback failure"))
+    driver = SqlDriver(conn=connection)
+
+    with caplog.at_level(logging.ERROR, logger="postgres_mcp.sql.sql_driver"):
+        with pytest.raises(RuntimeError, match="query failure"):
+            await driver._execute_bounded_with_connection(  # pyright: ignore[reportPrivateUsage]
+                connection,
+                "SELECT 1" if force_readonly else "UPDATE public.items SET active = true WHERE id = 1",
+                params=None,
+                max_rows=1,
+                force_readonly=force_readonly,
+                timeout_seconds=1,
+            )
+
+    assert "Error rolling back bounded query: rollback failure" in caplog.text
 
 
 @pytest.mark.asyncio
