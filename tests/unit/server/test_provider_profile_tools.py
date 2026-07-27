@@ -56,6 +56,18 @@ def snapshot() -> ProviderProfileSnapshot:
     )
 
 
+def test_provider_profile_repository_factory_uses_current_driver_and_timeout() -> None:
+    driver = AsyncMock()
+    with (
+        patch.object(server, "get_base_sql_driver", return_value=driver),
+        patch.object(server, "current_query_timeout", 7.5),
+    ):
+        repository = server.get_provider_profile_repository()
+
+    assert repository.sql_driver is driver
+    assert repository.timeout_seconds == 7.5
+
+
 @pytest.mark.asyncio
 async def test_provider_profile_tool_uses_bounded_readonly_repository() -> None:
     repository = AsyncMock()
