@@ -65,6 +65,7 @@ jobs:
               src/postgres_mcp/server.py \
               tests/unit/extensions/test_postgis_diagnostics.py \
               tests/unit/extensions/test_postgis_typmod_without_srid.py \
+              tests/unit/server/test_extension_profile_tools.py \
               tests/unit/server/test_postgis_diagnostic_tools.py \
               tests/integration/extensions/test_postgis_diagnostics_integration.py
             uv run ruff check --fix \
@@ -75,6 +76,7 @@ jobs:
               src/postgres_mcp/server.py \
               tests/unit/extensions/test_postgis_diagnostics.py \
               tests/unit/extensions/test_postgis_typmod_without_srid.py \
+              tests/unit/server/test_extension_profile_tools.py \
               tests/unit/server/test_postgis_diagnostic_tools.py \
               tests/integration/extensions/test_postgis_diagnostics_integration.py
             python scripts/check_ste_docs.py .
@@ -84,6 +86,7 @@ jobs:
             uv run pytest -q \
               tests/unit/extensions/test_postgis_diagnostics.py \
               tests/unit/extensions/test_postgis_typmod_without_srid.py \
+              tests/unit/server/test_extension_profile_tools.py \
               tests/unit/server/test_postgis_diagnostic_tools.py
             uv run pytest -q
           } 2>&1 | tee /tmp/postgis-publish-validation.txt
@@ -128,14 +131,12 @@ jobs:
           git add -- \
             README.md \
             docs/postgis.md \
-            scripts/apply_postgis_readme.py \
-            scripts/apply_postgis_server.py \
-            scripts/apply_postgis_source.py \
             src/postgres_mcp/postgis_diagnostics.py \
             src/postgres_mcp/server.py \
             tests/integration/extensions/test_postgis_diagnostics_integration.py \
             tests/unit/extensions/test_postgis_diagnostics.py \
             tests/unit/extensions/test_postgis_typmod_without_srid.py \
+            tests/unit/server/test_extension_profile_tools.py \
             tests/unit/server/test_postgis_diagnostic_tools.py
           git diff --cached --check
           if git diff --cached --quiet; then
