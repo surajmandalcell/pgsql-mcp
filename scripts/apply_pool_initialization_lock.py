@@ -8,7 +8,7 @@ old_state = """        self.pool: AsyncConnectionPool | None = None
         self._is_valid = False
         self._last_error: str | None = None
 """
-new_state = """        self.pool: AsyncConnectionPool | None = None
+new_state = """        self.pool: AsyncConnectionPool[Any] | None = None
         self._is_valid = False
         self._last_error: str | None = None
         self._initialization_lock = asyncio.Lock()
@@ -50,7 +50,7 @@ old_method = '''    async def pool_connect(self, connection_url: str | None = No
             await self.close()
             raise ValueError(f"Connection attempt failed: {obfuscate_password(str(exc))}") from exc
 '''
-new_method = '''    async def pool_connect(self, connection_url: str | None = None) -> AsyncConnectionPool:
+new_method = '''    async def pool_connect(self, connection_url: str | None = None) -> AsyncConnectionPool[Any]:
         """Initialize and verify the connection pool exactly once under concurrency."""
         if self.pool and self._is_valid:
             return self.pool
@@ -68,7 +68,7 @@ new_method = '''    async def pool_connect(self, connection_url: str | None = No
 
             await self.close()
             try:
-                candidate = AsyncConnectionPool(
+                candidate: AsyncConnectionPool[Any] = AsyncConnectionPool(
                     conninfo=url,
                     min_size=self.min_size,
                     max_size=self.max_size,
