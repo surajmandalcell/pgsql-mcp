@@ -53,22 +53,57 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run ruff format \
-            src/postgres_mcp/pgvector_diagnostics.py \
-            tests/unit/extensions/test_pgvector_catalog_validation.py \
-            tests/integration/extensions/test_pgvector_diagnostics_integration.py
-          uv run ruff check --fix \
-            src/postgres_mcp/pgvector_diagnostics.py \
-            tests/unit/extensions/test_pgvector_catalog_validation.py \
-            tests/integration/extensions/test_pgvector_diagnostics_integration.py
-          uv run ruff format --check .
-          uv run ruff check .
-          uv run pyright
-          uv run pytest -q \
-            tests/unit/extensions/test_pgvector_diagnostics.py \
-            tests/unit/extensions/test_pgvector_catalog_validation.py \
-            tests/unit/server/test_pgvector_diagnostic_tools.py
-          uv run pytest -q
+          {
+            uv run ruff format \
+              src/postgres_mcp/pgvector_diagnostics.py \
+              tests/unit/extensions/test_pgvector_catalog_validation.py \
+              tests/integration/extensions/test_pgvector_diagnostics_integration.py
+            uv run ruff check --fix \
+              src/postgres_mcp/pgvector_diagnostics.py \
+              tests/unit/extensions/test_pgvector_catalog_validation.py \
+              tests/integration/extensions/test_pgvector_diagnostics_integration.py
+            uv run ruff format --check .
+            uv run ruff check .
+            uv run pyright
+            echo "=== focused pgvector tests ==="
+            uv run pytest -q \
+              tests/unit/extensions/test_pgvector_diagnostics.py \
+              tests/unit/extensions/test_pgvector_catalog_validation.py \
+              tests/unit/server/test_pgvector_diagnostic_tools.py
+            echo "=== full suite ==="
+            uv run pytest -q
+          } 2>&1 | tee /tmp/pgvector-publish-validation.txt
+
+      - name: Capture pgvector publish diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short > /tmp/pgvector-publish-status.txt
+          git diff --check > /tmp/pgvector-publish-diff-check.txt || true
+          git diff --stat > /tmp/pgvector-publish-diff-stat.txt
+          git diff > /tmp/pgvector-publish.diff
+          tar \
+            --exclude=.git \
+            --exclude=.venv \
+            --exclude=.pytest_cache \
+            --exclude='**/__pycache__' \
+            -czf /tmp/pgvector-publish-workspace.tar.gz .
+
+      - name: Upload pgvector publish diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pgvector-publish-diagnostics
+          path: |
+            /tmp/pgvector-publish-validation.txt
+            /tmp/pgvector-publish-status.txt
+            /tmp/pgvector-publish-diff-check.txt
+            /tmp/pgvector-publish-diff-stat.txt
+            /tmp/pgvector-publish.diff
+            /tmp/pgvector-publish-workspace.tar.gz
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Commit final source
         env:
