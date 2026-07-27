@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -296,6 +297,94 @@ class SqlDriver:
             self._mark_connection_failure(exc)
             raise
 
+    async def _configure_bounded_transaction(
+        self,
+        cursor: Any,
+        *,
+        read_only: bool,
+        timeout_seconds: float | None,
+    ) -> None:
+        await cursor.execute("BEGIN TRANSACTION READ ONLY" if read_only else "BEGIN TRANSACTION")
+        if timeout_seconds is not None:
+            timeout_ms = max(1, int(timeout_seconds * 1000))
+            lock_timeout_ms = max(1, int(min(timeout_seconds, DEFAULT_LOCK_TIMEOUT_SECONDS) * 1000))
+            await cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                [f"{timeout_ms}ms"],
+            )
+            await cursor.execute(
+                "SELECT set_config('lock_timeout', %s, true)",
+                [f"{lock_timeout_ms}ms"],
+            )
+            await cursor.execute(
+                "SELECT set_config('idle_in_transaction_session_timeout', %s, true)",
+                [f"{timeout_ms}ms"],
+            )
+        await cursor.execute("SELECT set_config('row_security', 'on', true)")
+        await cursor.execute("SELECT set_config('search_path', 'pg_catalog, public', true)")
+
+    @staticmethod
+    def _bounded_result(
+        cursor: Any,
+        query: LiteralString,
+        rows: list[dict[str, Any]],
+        *,
+        truncated: bool,
+    ) -> BoundedQueryResult:
+        description = cursor.description or ()
+        return BoundedQueryResult(
+            rows=rows,
+            columns=[column_info_from_description(item) for item in description],
+            row_count=len(rows),
+            truncated=truncated,
+            affected_rows=_normalized_rowcount(getattr(cursor, "rowcount", None)),
+            command=_command_name(query),
+        )
+
+    async def _execute_readonly_bounded_with_connection(
+        self,
+        connection: Any,
+        query: LiteralString,
+        *,
+        params: list[Any] | None,
+        max_rows: int,
+        timeout_seconds: float | None,
+    ) -> BoundedQueryResult:
+        transaction_started = False
+        try:
+            async with connection.cursor(row_factory=dict_row) as control_cursor:
+                transaction_started = True
+                await self._configure_bounded_transaction(
+                    control_cursor,
+                    read_only=True,
+                    timeout_seconds=timeout_seconds,
+                )
+
+            cursor_name = f"pgsql_mcp_{secrets.token_hex(8)}"
+            async with connection.cursor(name=cursor_name, row_factory=dict_row) as cursor:
+                if params:
+                    await cursor.execute(query, params)
+                else:
+                    await cursor.execute(query)
+                fetched = await cursor.fetchmany(max_rows + 1) if cursor.description is not None else []
+                result = self._bounded_result(
+                    cursor,
+                    query,
+                    [dict(row) for row in fetched[:max_rows]],
+                    truncated=len(fetched) > max_rows,
+                )
+
+            await connection.rollback()
+            transaction_started = False
+            return result
+        except BaseException:
+            if transaction_started:
+                try:
+                    await connection.rollback()
+                except Exception as rollback_error:
+                    logger.error("Error rolling back bounded query: %s", rollback_error)
+            raise
+
     async def _execute_bounded_with_connection(
         self,
         connection: Any,
@@ -306,69 +395,42 @@ class SqlDriver:
         force_readonly: bool,
         timeout_seconds: float | None,
     ) -> BoundedQueryResult:
+        if force_readonly:
+            return await self._execute_readonly_bounded_with_connection(
+                connection,
+                query,
+                params=params,
+                max_rows=max_rows,
+                timeout_seconds=timeout_seconds,
+            )
+
         transaction_started = False
         try:
             async with connection.cursor(row_factory=dict_row) as cursor:
                 transaction_started = True
-                await cursor.execute("BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION")
-                if timeout_seconds is not None:
-                    timeout_ms = max(1, int(timeout_seconds * 1000))
-                    lock_timeout_ms = max(1, int(min(timeout_seconds, DEFAULT_LOCK_TIMEOUT_SECONDS) * 1000))
-                    await cursor.execute(
-                        "SELECT set_config('statement_timeout', %s, true)",
-                        [f"{timeout_ms}ms"],
-                    )
-                    await cursor.execute(
-                        "SELECT set_config('lock_timeout', %s, true)",
-                        [f"{lock_timeout_ms}ms"],
-                    )
-                    await cursor.execute(
-                        "SELECT set_config('idle_in_transaction_session_timeout', %s, true)",
-                        [f"{timeout_ms}ms"],
-                    )
-                await cursor.execute("SELECT set_config('row_security', 'on', true)")
-                await cursor.execute("SELECT set_config('search_path', 'pg_catalog, public', true)")
-
+                await self._configure_bounded_transaction(
+                    cursor,
+                    read_only=False,
+                    timeout_seconds=timeout_seconds,
+                )
                 if params:
                     await cursor.execute(query, params)
                 else:
                     await cursor.execute(query)
-
-                command = _command_name(query)
-                affected_rows = _normalized_rowcount(getattr(cursor, "rowcount", None))
                 if cursor.description is None:
-                    if force_readonly:
-                        await connection.rollback()
-                    else:
-                        await connection.commit()
-                    transaction_started = False
-                    return BoundedQueryResult(
-                        rows=[],
-                        columns=[],
-                        row_count=0,
-                        truncated=False,
-                        affected_rows=affected_rows,
-                        command=command,
+                    result = self._bounded_result(cursor, query, [], truncated=False)
+                else:
+                    fetched = await cursor.fetchmany(max_rows + 1)
+                    result = self._bounded_result(
+                        cursor,
+                        query,
+                        [dict(row) for row in fetched[:max_rows]],
+                        truncated=len(fetched) > max_rows,
                     )
 
-                fetched = await cursor.fetchmany(max_rows + 1)
-                truncated = len(fetched) > max_rows
-                visible_rows = fetched[:max_rows]
-                rows = [dict(row) for row in visible_rows]
-                columns = [column_info_from_description(item) for item in cursor.description]
-                if force_readonly:
-                    await connection.rollback()
-                else:
-                    await connection.commit()
-                transaction_started = False
-                return BoundedQueryResult(
-                    rows=rows,
-                    columns=columns,
-                    row_count=len(rows),
-                    truncated=truncated,
-                    affected_rows=affected_rows,
-                    command=command,
-                )
+            await connection.commit()
+            transaction_started = False
+            return result
         except BaseException:
             if transaction_started:
                 try:
