@@ -168,7 +168,8 @@ async def test_non_readonly_bounded_statement_keeps_single_unnamed_cursor() -> N
     driver = SqlDriver(conn=connection)
 
     result = await driver.execute_bounded_query(
-        "UPDATE public.items SET active = true WHERE id = 1",
+        "UPDATE public.items SET active = %s WHERE id = %s",
+        params=[True, 1],
         max_rows=1,
         force_readonly=False,
         timeout_seconds=1,
@@ -176,6 +177,10 @@ async def test_non_readonly_bounded_statement_keeps_single_unnamed_cursor() -> N
 
     assert result.affected_rows == 1
     assert connection.cursor.call_args_list == [call(row_factory=dict_row)]
+    cursor.execute.assert_awaited_once_with(
+        "UPDATE public.items SET active = %s WHERE id = %s",
+        [True, 1],
+    )
     assert contexts[0].exited is True
     connection.commit.assert_awaited_once()
     connection.rollback.assert_not_awaited()
