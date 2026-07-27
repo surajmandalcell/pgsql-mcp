@@ -1,0 +1,301 @@
+name: Integrate pgvector after PostGIS
+
+on:
+  push:
+    branches: [feature/pgvector-catalog-diagnostics-v3]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: integrate-pgvector-after-postgis
+  cancel-in-progress: false
+
+jobs:
+  integrate-validate-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout integration branch without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: feature/pgvector-catalog-diagnostics-v3
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Fetch validated pgvector source branch
+        run: git fetch origin feature/pgvector-catalog-diagnostics-v2
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Start and verify Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo service docker start || true
+          docker info
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Copy pgvector-owned files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in \
+            docs/pgvector.md \
+            src/postgres_mcp/pgvector_diagnostics.py \
+            tests/Dockerfile.postgres-hypopg \
+            tests/integration/extensions/test_pgvector_diagnostics_integration.py \
+            tests/unit/extensions/test_pgvector_catalog_validation.py \
+            tests/unit/extensions/test_pgvector_diagnostics.py \
+            tests/unit/server/test_pgvector_diagnostic_tools.py
+          do
+            mkdir -p "$(dirname "$path")"
+            git show "origin/feature/pgvector-catalog-diagnostics-v2:$path" > "$path"
+          done
+
+      - name: Merge shared README and server surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              source = path.read_text()
+              if source.count(old) != 1 or source.count(new) != 0:
+                  raise RuntimeError(f"expected one integration marker in {path}: {old!r}")
+              path.write_text(source.replace(old, new, 1))
+
+
+          readme = Path("README.md")
+          replace_once(
+              readme,
+              "- Report PostGIS columns and spatial indexes from PostgreSQL core catalogs.\n"
+              "- Explain queries and analyze index opportunities.",
+              "- Report PostGIS columns and spatial indexes from PostgreSQL core catalogs.\n"
+              "- Report pgvector columns and indexes from PostgreSQL core catalogs.\n"
+              "- Explain queries and analyze index opportunities.",
+          )
+          replace_once(
+              readme,
+              "- PostGIS diagnostics return at most 500 combined columns and indexes.\n"
+              "- Server-side cursors fetch only the visible row ceiling plus one row.",
+              "- PostGIS diagnostics return at most 500 combined columns and indexes.\n"
+              "- pgvector diagnostics return at most 500 combined columns and indexes.\n"
+              "- Server-side cursors fetch only the visible row ceiling plus one row.",
+          )
+          replace_once(
+              readme,
+              "| `get_postgis_diagnostics` | Report bounded PostGIS columns and spatial indexes |\n"
+              "| `get_deployment_profile` | Report provider capabilities without secrets |",
+              "| `get_postgis_diagnostics` | Report bounded PostGIS columns and spatial indexes |\n"
+              "| `get_pgvector_diagnostics` | Report bounded pgvector columns and indexes |\n"
+              "| `get_deployment_profile` | Report provider capabilities without secrets |",
+          )
+
+          server = Path("src/postgres_mcp/server.py")
+          replace_once(
+              server,
+              "from .postgis_diagnostics import PostgresPostgisRepository  # noqa: E402\n"
+              "from .provider_profiles import PostgresProviderProfileRepository  # noqa: E402",
+              "from .postgis_diagnostics import PostgresPostgisRepository  # noqa: E402\n"
+              "from .pgvector_diagnostics import MAX_PGVECTOR_ITEMS  # noqa: E402\n"
+              "from .pgvector_diagnostics import PgvectorCatalogError  # noqa: E402\n"
+              "from .pgvector_diagnostics import PostgresPgvectorRepository  # noqa: E402\n"
+              "from .provider_profiles import PostgresProviderProfileRepository  # noqa: E402",
+          )
+          replace_once(
+              server,
+              '''def get_postgis_repository() -> PostgresPostgisRepository:
+              """Build the bounded read-only PostGIS catalog repository."""
+              return PostgresPostgisRepository(
+                  get_base_sql_driver(),
+                  timeout_seconds=max(1.0, float(current_query_timeout)),
+              )
+
+
+          def get_migration_service() -> MigrationService:
+          ''',
+              '''def get_postgis_repository() -> PostgresPostgisRepository:
+              """Build the bounded read-only PostGIS catalog repository."""
+              return PostgresPostgisRepository(
+                  get_base_sql_driver(),
+                  timeout_seconds=max(1.0, float(current_query_timeout)),
+              )
+
+
+          def get_pgvector_repository() -> PostgresPgvectorRepository:
+              """Build the bounded read-only pgvector catalog repository."""
+              return PostgresPgvectorRepository(
+                  get_base_sql_driver(),
+                  timeout_seconds=max(1.0, float(current_query_timeout)),
+              )
+
+
+          def get_migration_service() -> MigrationService:
+          ''',
+          )
+          replace_once(
+              server,
+              '''                "postgis_diagnostics": {
+                      "read_only": True,
+                      "core_catalogs_only": True,
+                      "extension_functions_called": False,
+                      "max_items": MAX_POSTGIS_ITEMS,
+                      "types": ["geometry", "geography", "raster"],
+                      "index_methods": ["gist", "spgist", "brin"],
+                  },
+              },
+          ''',
+              '''                "postgis_diagnostics": {
+                      "read_only": True,
+                      "core_catalogs_only": True,
+                      "extension_functions_called": False,
+                      "max_items": MAX_POSTGIS_ITEMS,
+                      "types": ["geometry", "geography", "raster"],
+                      "index_methods": ["gist", "spgist", "brin"],
+                  },
+                  "pgvector_diagnostics": {
+                      "read_only": True,
+                      "core_catalogs_only": True,
+                      "extension_functions_called": False,
+                      "max_items": MAX_PGVECTOR_ITEMS,
+                      "types": ["vector", "halfvec", "sparsevec", "bit"],
+                      "index_methods": ["hnsw", "ivfflat"],
+                  },
+              },
+          ''',
+          )
+          replace_once(
+              server,
+              '''    except Exception as exc:
+                  logger.exception("Unexpected PostGIS catalog diagnostic error")
+                  return format_error_response(str(exc))
+
+
+          @mcp.tool(description="Search relations, routines, types, collations, and extensions")
+          ''',
+              '''    except Exception as exc:
+                  logger.exception("Unexpected PostGIS catalog diagnostic error")
+                  return format_error_response(str(exc))
+
+
+          @mcp.tool(description="Report bounded pgvector columns and indexes through PostgreSQL core catalogs")
+          async def get_pgvector_diagnostics(
+              max_columns: Annotated[
+                  int,
+                  Field(description="Maximum pgvector columns", ge=1, le=MAX_PGVECTOR_ITEMS - 1),
+              ] = 250,
+              max_indexes: Annotated[
+                  int,
+                  Field(description="Maximum pgvector indexes", ge=1, le=MAX_PGVECTOR_ITEMS - 1),
+              ] = 250,
+          ) -> ResponseType:
+              """Return read-only pgvector column, dimension, index, and validity metadata."""
+              try:
+                  snapshot = await get_pgvector_repository().snapshot(
+                      max_columns=max_columns,
+                      max_indexes=max_indexes,
+                  )
+                  return format_text_response(snapshot.to_payload())
+              except PgvectorCatalogError as exc:
+                  return format_error_response(str(exc))
+              except Exception as exc:
+                  logger.exception("Unexpected pgvector catalog diagnostic error")
+                  return format_error_response(str(exc))
+
+
+          @mcp.tool(description="Search relations, routines, types, collations, and extensions")
+          ''',
+          )
+
+          capability_test = Path("tests/unit/server/test_extension_profile_tools.py")
+          replace_once(
+              capability_test,
+              '''        "postgis_diagnostics": {
+                  "read_only": True,
+                  "core_catalogs_only": True,
+                  "extension_functions_called": False,
+                  "max_items": 500,
+                  "types": ["geometry", "geography", "raster"],
+                  "index_methods": ["gist", "spgist", "brin"],
+              },
+          ''',
+              '''        "postgis_diagnostics": {
+                  "read_only": True,
+                  "core_catalogs_only": True,
+                  "extension_functions_called": False,
+                  "max_items": 500,
+                  "types": ["geometry", "geography", "raster"],
+                  "index_methods": ["gist", "spgist", "brin"],
+              },
+              "pgvector_diagnostics": {
+                  "read_only": True,
+                  "core_catalogs_only": True,
+                  "extension_functions_called": False,
+                  "max_items": 500,
+                  "types": ["vector", "halfvec", "sparsevec", "bit"],
+                  "index_methods": ["hnsw", "ivfflat"],
+              },
+          ''',
+          )
+
+          Path(".github/workflows/integrate-pgvector-after-postgis.yml").unlink()
+          PY
+
+      - name: Install complete dependency set
+        run: uv sync --frozen --all-extras
+
+      - name: Validate integrated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run ruff format \
+            src/postgres_mcp/pgvector_diagnostics.py \
+            src/postgres_mcp/server.py \
+            tests/integration/extensions/test_pgvector_diagnostics_integration.py \
+            tests/unit/extensions/test_pgvector_catalog_validation.py \
+            tests/unit/extensions/test_pgvector_diagnostics.py \
+            tests/unit/server/test_extension_profile_tools.py \
+            tests/unit/server/test_pgvector_diagnostic_tools.py
+          uv run ruff check --fix \
+            src/postgres_mcp/pgvector_diagnostics.py \
+            src/postgres_mcp/server.py \
+            tests/integration/extensions/test_pgvector_diagnostics_integration.py \
+            tests/unit/extensions/test_pgvector_catalog_validation.py \
+            tests/unit/extensions/test_pgvector_diagnostics.py \
+            tests/unit/server/test_extension_profile_tools.py \
+            tests/unit/server/test_pgvector_diagnostic_tools.py
+          python scripts/check_ste_docs.py .
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run pyright
+          uv run pytest -q \
+            tests/unit/extensions/test_pgvector_diagnostics.py \
+            tests/unit/extensions/test_pgvector_catalog_validation.py \
+            tests/unit/server/test_pgvector_diagnostic_tools.py \
+            tests/unit/server/test_postgis_diagnostic_tools.py \
+            tests/unit/server/test_extension_profile_tools.py
+          uv run pytest -q
+
+      - name: Commit integrated source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Integrate read-only pgvector catalog diagnostics"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feature/pgvector-catalog-diagnostics-v3
