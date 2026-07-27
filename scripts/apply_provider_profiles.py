@@ -9,6 +9,19 @@ def replace_once(path: str, old: str, new: str) -> None:
     target.write_text(source.replace(old, new, 1))
 
 
+provider_module = "src/postgres_mcp/provider_profiles.py"
+replace_once(
+    provider_module,
+    '''        _MANAGED_NOTES
+        + ("This profile describes Supabase-hosted deployments; self-hosted Supabase should use upstream or explicit generic-managed policy.",),
+''',
+    '''        (
+            *_MANAGED_NOTES,
+            "This profile describes Supabase-hosted deployments; self-hosted Supabase should use upstream or explicit generic-managed policy.",
+        ),
+''',
+)
+
 server = "src/postgres_mcp/server.py"
 replace_once(
     server,
@@ -78,23 +91,27 @@ async def get_deployment_profile(
 replace_once(server, marker, tool + marker)
 
 readme = "README.md"
-replace_once(
-    readme,
-    "- **Extension profiles** — inventory known and unknown installed extensions with honest catalog, type, and specialized-tool support tiers.\n",
-    "- **Extension profiles** — inventory known and unknown installed extensions with honest catalog, type, and specialized-tool support tiers.\n"
-    "- **Provider profiles** — distinguish explicit and strongly detected managed PostgreSQL deployments without reading secrets or guessing weak markers.\n",
+extension_feature = (
+    "- **Extension profiles** — inventory known and unknown installed extensions "
+    "with honest catalog, type, and specialized-tool support tiers.\n"
 )
+provider_feature = (
+    "- **Provider profiles** — distinguish explicit and strongly detected managed "
+    "PostgreSQL deployments without reading secrets or guessing weak markers.\n"
+)
+replace_once(readme, extension_feature, extension_feature + provider_feature)
 replace_once(
     readme,
     "| `get_extension_profiles` | List bounded installed or available extension capability profiles |\n",
     "| `get_extension_profiles` | List bounded installed or available extension capability profiles |\n"
     "| `get_deployment_profile` | Report explicit or strong-marker provider constraints and standard runtime capabilities |\n",
 )
-replace_once(
-    readme,
-    "extension profiles in [docs/extensions.md](docs/extensions.md), and the version support contract",
-    "extension profiles in [docs/extensions.md](docs/extensions.md), provider profiles in [docs/providers.md](docs/providers.md), and the version support contract",
+old_docs = "extension profiles in [docs/extensions.md](docs/extensions.md), and the version support contract"
+new_docs = (
+    "extension profiles in [docs/extensions.md](docs/extensions.md), provider profiles in "
+    "[docs/providers.md](docs/providers.md), and the version support contract"
 )
+replace_once(readme, old_docs, new_docs)
 
 workflow = ".github/workflows/postgres-compatibility.yml"
 replace_once(
