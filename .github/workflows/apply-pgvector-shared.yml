@@ -44,73 +44,74 @@ jobs:
           from pathlib import Path
 
 
-          def replace_once(path: Path, old: str, new: str) -> None:
+          def insert_after_line(path: Path, anchor: str, addition: str) -> None:
               source = path.read_text()
-              if source.count(new) == 1 and source.count(old) == 0:
+              if addition in source:
                   return
-              if source.count(old) != 1 or source.count(new) != 0:
-                  raise RuntimeError(f"expected one integration marker in {path}: {old!r}")
-              path.write_text(source.replace(old, new, 1))
+              marker = anchor + "\n"
+              if source.count(marker) != 1:
+                  raise RuntimeError(f"missing unique line anchor in {path}: {anchor!r}")
+              path.write_text(source.replace(marker, marker + addition + "\n", 1))
+
+
+          def insert_before(path: Path, anchor: str, addition: str, present: str) -> None:
+              source = path.read_text()
+              if present in source:
+                  return
+              if source.count(anchor) != 1:
+                  raise RuntimeError(f"missing unique insertion anchor in {path}: {anchor!r}")
+              path.write_text(source.replace(anchor, addition + anchor, 1))
+
+
+          def insert_mapping_sibling(path: Path, key: str, addition: str, present: str) -> None:
+              source = path.read_text()
+              if present in source:
+                  return
+              lines = source.splitlines(keepends=True)
+              matches = [index for index, line in enumerate(lines) if line.strip() == f'"{key}": {{']
+              if len(matches) != 1:
+                  raise RuntimeError(f"missing unique mapping key in {path}: {key!r}")
+              start = matches[0]
+              indent = lines[start][: len(lines[start]) - len(lines[start].lstrip())]
+              end = next(
+                  (index for index in range(start + 1, len(lines)) if lines[index].rstrip("\n") == indent + "},"),
+                  None,
+              )
+              if end is None:
+                  raise RuntimeError(f"mapping block does not close in {path}: {key!r}")
+              lines.insert(end + 1, addition)
+              path.write_text("".join(lines))
 
 
           readme = Path("README.md")
-          replace_once(
+          insert_after_line(
               readme,
-              "- Report PostGIS columns and spatial indexes from PostgreSQL core catalogs.\n"
-              "- Explain queries and analyze index opportunities.",
-              "- Report PostGIS columns and spatial indexes from PostgreSQL core catalogs.\n"
-              "- Report pgvector columns and indexes from PostgreSQL core catalogs.\n"
-              "- Explain queries and analyze index opportunities.",
+              "- Report PostGIS columns and spatial indexes from PostgreSQL core catalogs.",
+              "- Report pgvector columns and indexes from PostgreSQL core catalogs.",
           )
-          replace_once(
+          insert_after_line(
               readme,
-              "- PostGIS diagnostics return at most 500 combined columns and indexes.\n"
-              "- Server-side cursors fetch only the visible row ceiling plus one row.",
-              "- PostGIS diagnostics return at most 500 combined columns and indexes.\n"
-              "- pgvector diagnostics return at most 500 combined columns and indexes.\n"
-              "- Server-side cursors fetch only the visible row ceiling plus one row.",
+              "- PostGIS diagnostics return at most 500 combined columns and indexes.",
+              "- pgvector diagnostics return at most 500 combined columns and indexes.",
           )
-          replace_once(
+          insert_after_line(
               readme,
-              "| `get_postgis_diagnostics` | Report bounded PostGIS columns and spatial indexes |\n"
-              "| `get_deployment_profile` | Report provider capabilities without secrets |",
-              "| `get_postgis_diagnostics` | Report bounded PostGIS columns and spatial indexes |\n"
-              "| `get_pgvector_diagnostics` | Report bounded pgvector columns and indexes |\n"
-              "| `get_deployment_profile` | Report provider capabilities without secrets |",
+              "| `get_postgis_diagnostics` | Report bounded PostGIS columns and spatial indexes |",
+              "| `get_pgvector_diagnostics` | Report bounded pgvector columns and indexes |",
           )
 
           server = Path("src/postgres_mcp/server.py")
-          replace_once(
+          insert_after_line(
               server,
-              "from .postgis_diagnostics import PostgresPostgisRepository  # noqa: E402\n"
-              "from .provider_profiles import PostgresProviderProfileRepository  # noqa: E402",
-              "from .postgis_diagnostics import PostgresPostgisRepository  # noqa: E402\n"
+              "from .postgis_diagnostics import PostgresPostgisRepository  # noqa: E402",
               "from .pgvector_diagnostics import MAX_PGVECTOR_ITEMS  # noqa: E402\n"
               "from .pgvector_diagnostics import PgvectorCatalogError  # noqa: E402\n"
-              "from .pgvector_diagnostics import PostgresPgvectorRepository  # noqa: E402\n"
-              "from .provider_profiles import PostgresProviderProfileRepository  # noqa: E402",
+              "from .pgvector_diagnostics import PostgresPgvectorRepository  # noqa: E402",
           )
-          replace_once(
+          insert_before(
               server,
-              '''def get_postgis_repository() -> PostgresPostgisRepository:
-              """Build the bounded read-only PostGIS catalog repository."""
-              return PostgresPostgisRepository(
-                  get_base_sql_driver(),
-                  timeout_seconds=max(1.0, float(current_query_timeout)),
-              )
-
-
-          def get_migration_service() -> MigrationService:
-          ''',
-              '''def get_postgis_repository() -> PostgresPostgisRepository:
-              """Build the bounded read-only PostGIS catalog repository."""
-              return PostgresPostgisRepository(
-                  get_base_sql_driver(),
-                  timeout_seconds=max(1.0, float(current_query_timeout)),
-              )
-
-
-          def get_pgvector_repository() -> PostgresPgvectorRepository:
+              "def get_migration_service() -> MigrationService:\n",
+              '''def get_pgvector_repository() -> PostgresPgvectorRepository:
               """Build the bounded read-only pgvector catalog repository."""
               return PostgresPgvectorRepository(
                   get_base_sql_driver(),
@@ -118,30 +119,13 @@ jobs:
               )
 
 
-          def get_migration_service() -> MigrationService:
           ''',
+              "def get_pgvector_repository() -> PostgresPgvectorRepository:",
           )
-          replace_once(
+          insert_mapping_sibling(
               server,
-              '''                "postgis_diagnostics": {
-                      "read_only": True,
-                      "core_catalogs_only": True,
-                      "extension_functions_called": False,
-                      "max_items": MAX_POSTGIS_ITEMS,
-                      "types": ["geometry", "geography", "raster"],
-                      "index_methods": ["gist", "spgist", "brin"],
-                  },
-              },
-          ''',
-              '''                "postgis_diagnostics": {
-                      "read_only": True,
-                      "core_catalogs_only": True,
-                      "extension_functions_called": False,
-                      "max_items": MAX_POSTGIS_ITEMS,
-                      "types": ["geometry", "geography", "raster"],
-                      "index_methods": ["gist", "spgist", "brin"],
-                  },
-                  "pgvector_diagnostics": {
+              "postgis_diagnostics",
+              '''                "pgvector_diagnostics": {
                       "read_only": True,
                       "core_catalogs_only": True,
                       "extension_functions_called": False,
@@ -149,24 +133,13 @@ jobs:
                       "types": ["vector", "halfvec", "sparsevec", "bit"],
                       "index_methods": ["hnsw", "ivfflat"],
                   },
-              },
           ''',
+              '"pgvector_diagnostics": {',
           )
-          replace_once(
+          insert_before(
               server,
-              '''    except Exception as exc:
-                  logger.exception("Unexpected PostGIS catalog diagnostic error")
-                  return format_error_response(str(exc))
-
-
-          @mcp.tool(description="Search relations, routines, types, collations, and extensions")
-          ''',
-              '''    except Exception as exc:
-                  logger.exception("Unexpected PostGIS catalog diagnostic error")
-                  return format_error_response(str(exc))
-
-
-          @mcp.tool(description="Report bounded pgvector columns and indexes through PostgreSQL core catalogs")
+              '@mcp.tool(description="Search relations, routines, types, collations, and extensions")\n',
+              '''@mcp.tool(description="Report bounded pgvector columns and indexes through PostgreSQL core catalogs")
           async def get_pgvector_diagnostics(
               max_columns: Annotated[
                   int,
@@ -191,31 +164,15 @@ jobs:
                   return format_error_response(str(exc))
 
 
-          @mcp.tool(description="Search relations, routines, types, collations, and extensions")
           ''',
+              "async def get_pgvector_diagnostics(",
           )
 
           capability_test = Path("tests/unit/server/test_extension_profile_tools.py")
-          replace_once(
+          insert_mapping_sibling(
               capability_test,
-              '''        "postgis_diagnostics": {
-                  "read_only": True,
-                  "core_catalogs_only": True,
-                  "extension_functions_called": False,
-                  "max_items": 500,
-                  "types": ["geometry", "geography", "raster"],
-                  "index_methods": ["gist", "spgist", "brin"],
-              },
-          ''',
-              '''        "postgis_diagnostics": {
-                  "read_only": True,
-                  "core_catalogs_only": True,
-                  "extension_functions_called": False,
-                  "max_items": 500,
-                  "types": ["geometry", "geography", "raster"],
-                  "index_methods": ["gist", "spgist", "brin"],
-              },
-              "pgvector_diagnostics": {
+              "postgis_diagnostics",
+              '''        "pgvector_diagnostics": {
                   "read_only": True,
                   "core_catalogs_only": True,
                   "extension_functions_called": False,
@@ -224,10 +181,8 @@ jobs:
                   "index_methods": ["hnsw", "ivfflat"],
               },
           ''',
+              '"pgvector_diagnostics": {',
           )
-
-          Path(".github/workflows/apply-pgvector-shared.yml").unlink()
-          Path(".github/pgvector-shared-trigger").unlink()
           PY
 
       - name: Install complete dependency set
@@ -252,6 +207,11 @@ jobs:
             tests/unit/server/test_pgvector_diagnostic_tools.py \
             tests/unit/server/test_postgis_diagnostic_tools.py \
             tests/unit/server/test_extension_profile_tools.py
+
+      - name: Remove integration scaffolding
+        run: |
+          rm -f .github/workflows/apply-pgvector-shared.yml
+          rm -f .github/pgvector-shared-trigger
 
       - name: Commit shared integration
         env:
