@@ -51,8 +51,8 @@ jobs:
       - name: Normalize and validate
         run: |
           set -euo pipefail
-          uv run ruff format src/postgres_mcp/extension_profiles.py src/postgres_mcp/server.py tests/unit/extensions tests/unit/server/test_extension_profile_factory.py tests/unit/server/test_extension_profile_tools.py tests/integration/extensions
-          uv run ruff check --fix src/postgres_mcp/extension_profiles.py src/postgres_mcp/server.py tests/unit/extensions tests/unit/server/test_extension_profile_factory.py tests/unit/server/test_extension_profile_tools.py tests/integration/extensions
+          uv run ruff format scripts/apply_extension_profiles.py src/postgres_mcp/extension_profiles.py src/postgres_mcp/server.py tests/unit/extensions tests/unit/server/test_extension_profile_factory.py tests/unit/server/test_extension_profile_tools.py tests/integration/extensions
+          uv run ruff check --fix scripts/apply_extension_profiles.py src/postgres_mcp/extension_profiles.py src/postgres_mcp/server.py tests/unit/extensions tests/unit/server/test_extension_profile_factory.py tests/unit/server/test_extension_profile_tools.py tests/integration/extensions
           uv run ruff format --check .
           uv run ruff check .
           uv run pyright
@@ -63,7 +63,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git add -- README.md src/postgres_mcp/server.py
+          git add -- README.md scripts/apply_extension_profiles.py src/postgres_mcp/server.py
           git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
