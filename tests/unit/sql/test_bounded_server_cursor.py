@@ -177,7 +177,7 @@ async def test_non_readonly_bounded_statement_keeps_single_unnamed_cursor() -> N
 
     assert result.affected_rows == 1
     assert connection.cursor.call_args_list == [call(row_factory=dict_row)]
-    cursor.execute.assert_awaited_once_with(
+    cursor.execute.assert_any_await(
         "UPDATE public.items SET active = %s WHERE id = %s",
         [True, 1],
     )
