@@ -1,0 +1,75 @@
+name: Roadmap CI diagnostic
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: roadmap-ci-diagnostic-main
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Capture roadmap validation results
+        shell: bash
+        run: |
+          set +e
+          report=/tmp/roadmap-ci-diagnostic.txt
+          : > "$report"
+
+          run_check() {
+            label="$1"
+            shift
+            echo "===== $label =====" >> "$report"
+            "$@" >> "$report" 2>&1
+            code=$?
+            echo "EXIT_CODE=$code" >> "$report"
+            echo >> "$report"
+          }
+
+          cat scripts/future_roadmap_parts/part*.txt | tr -d '\n' | base64 -d > /tmp/apply_future_roadmap.py
+          run_check "compile publisher" python -m py_compile /tmp/apply_future_roadmap.py
+          run_check "apply publisher" python /tmp/apply_future_roadmap.py
+          run_check "install dependencies" uv sync --frozen --all-extras
+          run_check "format check" uv run ruff format --check .
+          run_check "lint check" uv run ruff check .
+          run_check "type check" uv run pyright
+          run_check "focused unit tests" uv run pytest -q tests/unit/extensions/test_timescaledb_diagnostics.py tests/unit/extensions/test_citus_diagnostics.py tests/unit/staged_migrations tests/unit/server/test_future_roadmap_tools.py tests/unit/quality/test_transport_branch_coverage.py
+          run_check "writing profile" python scripts/check_ste_docs.py .
+
+          tail -c 55000 "$report" > /tmp/roadmap-ci-diagnostic-body.txt
+
+      - name: Publish diagnostic issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue create \
+            --title "Roadmap CI diagnostic ${{ github.sha }}" \
+            --body-file /tmp/roadmap-ci-diagnostic-body.txt
