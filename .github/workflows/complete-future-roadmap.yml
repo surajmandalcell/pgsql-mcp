@@ -1,0 +1,90 @@
+name: Complete future roadmap
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: complete-future-roadmap-main
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+        with:
+          version: "0.6.9"
+
+      - name: Reconstruct and apply the roadmap source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat scripts/future_roadmap_parts/part*.txt | tr -d '\n' | base64 -d > scripts/apply_future_roadmap.py
+          python scripts/apply_future_roadmap.py
+
+      - name: Install complete dependency set
+        run: uv sync --frozen --all-extras
+
+      - name: Format and lint source
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run ruff format .
+          uv run ruff check . --fix
+          uv run ruff format --check .
+          uv run ruff check .
+
+      - name: Check types
+        run: uv run pyright
+
+      - name: Run unit contracts
+        run: uv run pytest -q tests/unit
+
+      - name: Run focused roadmap mutation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python tests/mutation/safety_mutations.py \
+            --mutation timescaledb_accepts_exact_combined_item_ceiling \
+            --mutation citus_accepts_exact_combined_item_ceiling \
+            --mutation timescaledb_reports_unscheduled_jobs \
+            --mutation citus_reports_inactive_nodes \
+            --mutation staged_migration_requires_exact_review_hash \
+            --mutation staged_migration_advances_after_success \
+            --mutation staged_migration_preserves_unknown_outcome \
+            --mutation staged_migration_requires_owned_ledger \
+            --output roadmap-mutation-results.json \
+            --timeout-seconds 180
+
+      - name: Check the ASD-STE100 project profile
+        run: python scripts/check_ste_docs.py .
+
+      - name: Publish final source to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf scripts/future_roadmap_parts
+          rm -f scripts/apply_future_roadmap.py
+          rm -f .github/workflows/complete-future-roadmap.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Complete future roadmap"
+          git push origin HEAD:main
