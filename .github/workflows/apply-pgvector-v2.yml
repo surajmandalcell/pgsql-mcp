@@ -78,6 +78,7 @@ jobs:
             src/postgres_mcp/server.py \
             tests/integration/extensions/test_pgvector_diagnostics_integration.py \
             tests/unit/extensions/test_pgvector_diagnostics.py \
+            tests/unit/server/test_extension_profile_tools.py \
             tests/unit/server/test_pgvector_diagnostic_tools.py
           uv run ruff check --fix \
             scripts/apply_pgvector_readme.py \
@@ -85,6 +86,7 @@ jobs:
             src/postgres_mcp/server.py \
             tests/integration/extensions/test_pgvector_diagnostics_integration.py \
             tests/unit/extensions/test_pgvector_diagnostics.py \
+            tests/unit/server/test_extension_profile_tools.py \
             tests/unit/server/test_pgvector_diagnostic_tools.py
           python scripts/check_ste_docs.py .
           uv run ruff format --check .
@@ -92,6 +94,7 @@ jobs:
           uv run pyright
           uv run pytest -q \
             tests/unit/extensions/test_pgvector_diagnostics.py \
+            tests/unit/server/test_extension_profile_tools.py \
             tests/unit/server/test_pgvector_diagnostic_tools.py \
             tests/integration/extensions/test_pgvector_diagnostics_integration.py
           uv run pytest -q
@@ -110,6 +113,7 @@ jobs:
             tests/Dockerfile.postgres-hypopg \
             tests/integration/extensions/test_pgvector_diagnostics_integration.py \
             tests/unit/extensions/test_pgvector_diagnostics.py \
+            tests/unit/server/test_extension_profile_tools.py \
             tests/unit/server/test_pgvector_diagnostic_tools.py
           git diff --cached --check
           git config user.name "github-actions[bot]"
