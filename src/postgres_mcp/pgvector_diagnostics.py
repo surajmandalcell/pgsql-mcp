@@ -83,14 +83,14 @@ WHERE EXISTS (
     SELECT 1
     FROM extension_members AS member
     WHERE (member.classid = 'pg_catalog.pg_am'::pg_catalog.regclass AND member.objid = access_method.oid)
-       OR (member.classid = 'pg_catalog.pg_opclass'::pg_catalog.regclass AND member.objid = ANY(index.indclass))
+       OR (member.classid = 'pg_catalog.pg_opclass'::pg_catalog.regclass AND member.objid = ANY(index.indclass::oid[]))
 )
 ORDER BY relation_namespace.nspname, relation.relname, index_relation.relname
 """
 
 _FORMATTED_TYPE = re.compile(
     r'^(?:(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)\.)?'
-    r'(vector|halfvec|sparsevec|bit)(?:\(([0-9]+)\))?$'
+    r"(vector|halfvec|sparsevec|bit)(?:\(([0-9]+)\))?$"
 )
 
 _KNOWN_OPERATOR_CLASSES = frozenset(

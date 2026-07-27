@@ -48,11 +48,7 @@ async def test_pgvector_columns_and_hnsw_index_use_only_catalog_metadata(
         assert first.identity.oid > 0
         assert first.truncated is False
 
-        columns = {
-            (column.schema, column.relation, column.column): column
-            for column in first.columns
-            if column.schema == "pgvector_contract"
-        }
+        columns = {(column.schema, column.relation, column.column): column for column in first.columns if column.schema == "pgvector_contract"}
         assert columns[("pgvector_contract", "items", "embedding")].dimensions == 3
         assert columns[("pgvector_contract", "items", "embedding")].nullable is False
         assert columns[("pgvector_contract", "items", "compact")].type_name == "halfvec"
