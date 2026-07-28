@@ -45,7 +45,7 @@ jobs:
           rm -f scripts/apply_future_roadmap.py
           rm -f roadmap-mutation-results.json
           rm -f docs/roadmap-merge-trigger*.md
-          rm -f docs/roadmap-publisher-merge-event.md
+          rm -f docs/roadmap-publisher-*.md
           rm -f .github/workflows/complete-future-roadmap.yml
           rm -f .github/workflows/roadmap-ci-diagnostic.yml
           git config user.name "github-actions[bot]"
